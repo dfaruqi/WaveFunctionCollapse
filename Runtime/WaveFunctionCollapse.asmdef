@@ -1,0 +1,8 @@
+{
+  "name": "MagusStudios.WaveFunctionCollapse",
+  "rootNamespace": "MagusStudios.WaveFunctionCollapse",
+  "references": [
+  "AYellowpaper.SerializedCollections",
+  "Unity.TextMeshPro"
+  ]
+}
