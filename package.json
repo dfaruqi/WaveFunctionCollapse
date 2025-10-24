@@ -10,6 +10,13 @@
     "email": "dannyfaruqi@gmail.com"
   },
   "dependencies": {
-    "com.unity.2d.tilemap": "1.0.0"
-  }
+    "com.unity.2d.tilemap": "1.0.1"
+  },
+  "samples": [
+	{
+      "displayName": "WFC Generation and Module Editing",
+      "description": "Shows how to use the package",
+      "path": "Samples/Sample Scene"
+    }
+  ]
 }

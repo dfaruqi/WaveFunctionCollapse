@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace MagusStudios.Arcanist.Tilemaps
 {
-    [CreateAssetMenu(fileName = "TileDatabase", menuName = "Databases/TileDatabase")]
+    [CreateAssetMenu(fileName = "TileDatabase", menuName = "Tiles/TileDatabase")]
     public class TileDatabase : ScriptableObject
     {
         public SerializedDictionary<int, Tile> Tiles;

@@ -18,7 +18,7 @@ This package provides an implementation of **Wave Function Collapse (WFC)** proc
 Try the included sample scene:  
 **`Samples~/WFC Generation and Module Editing`**
 
-1. Open the sample scene in the editor.  
+1. Import and open the sample scene from Window > Package Manager > In Project > Wave Function Collapse > Samples.
 2. Press **Play**.  
 3. Select the **"WFC"** GameObject in the Hierarchy.  
 4. In the Inspector, locate the **Wave Function Collapse** component.  
