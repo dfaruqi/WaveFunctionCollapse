@@ -2,14 +2,13 @@
 
 ## Install via Unity Package Manager
 
+**Recommended Unity Version:** 6000.0.60f1 +
+
 1. Open Unity and go to **Window → Package Manager**.  
 2. Click the **+** button and choose **Add package from git URL…**.  
 3. Enter the following URL:  
 
 This package provides an implementation of **Wave Function Collapse (WFC)** procedural generation and a suite of **editor tools** to create and edit module sets seamlessly with Unity’s Tilemap Editor.
-
-**Unity Version:** 6000.0.60f1  
-**Description:**  
 
 
 ---
