@@ -176,7 +176,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             if (ShouldShowDebugOverlay())
             {
                 _debugOverlay.enabled = true;
-                _debugOverlay.CreateNumberOverlay(mapSize, modules.Count);
+                _debugOverlay.CreateNumberOverlay(tilemap, mapSize, modules.Count);
             }
             else
             {

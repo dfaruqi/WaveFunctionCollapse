@@ -7,7 +7,6 @@ namespace MagusStudios.Arcanist.Tilemaps
 {
     public class TilemapNumberOverlay : MonoBehaviour
     {
-        [SerializeField] Tilemap tilemap;
         [SerializeField] GameObject numbersPrefab;
         [SerializeField] GameObject numbersParent;
 
@@ -23,9 +22,9 @@ namespace MagusStudios.Arcanist.Tilemaps
             numbersParent?.SetActive(false);
         }
 
-        public void CreateNumberOverlay(Vector2Int size, int defaultValue = -1)
+        public void CreateNumberOverlay(Tilemap tilemap, Vector2Int size, int defaultValue = -1)
         {
-            Clear();
+            Clear(tilemap);
 
             BoundsInt bounds = new BoundsInt();
             bounds.x = size.x;
@@ -48,7 +47,7 @@ namespace MagusStudios.Arcanist.Tilemaps
             }
         }
 
-        private void Clear()
+        private void Clear(Tilemap tilemap)
         {
             foreach (var child in _numberTexts.Values)
             {
