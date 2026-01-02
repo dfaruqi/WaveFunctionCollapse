@@ -18,6 +18,8 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
         bool autoRandomize = true;
 
+        Unity.Mathematics.Random random = new Unity.Mathematics.Random(1);
+
         private void OnEnable()
         {
             moduleSet = serializedObject.FindProperty("moduleSet");
@@ -55,7 +57,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             EditorGUILayout.PropertyField(seed);
             if (GUILayout.Button("Randomize", GUILayout.MaxWidth(100)))
             {
-                seed.intValue = Random.Range(int.MinValue, int.MaxValue);
+                seed.uintValue = random.NextUInt();
             }
             EditorGUILayout.EndHorizontal();
             autoRandomize = EditorGUILayout.Toggle("Auto Randomize", autoRandomize);
@@ -66,7 +68,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             {
                 if (autoRandomize)
                 {
-                    seed.intValue = Random.Range(int.MinValue, int.MaxValue);
+                    seed.uintValue = random.NextUInt();
                     serializedObject.ApplyModifiedProperties();
                 }
 

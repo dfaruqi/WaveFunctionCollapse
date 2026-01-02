@@ -3,6 +3,8 @@
   "rootNamespace": "MagusStudios.WaveFunctionCollapse",
   "references": [
   "AYellowpaper.SerializedCollections",
-  "Unity.TextMeshPro"
+  "Unity.TextMeshPro",
+  "Unity.Mathematics",
+  "Unity.Collections"
   ]
 }
