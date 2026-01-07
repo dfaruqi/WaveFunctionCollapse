@@ -1,4 +1,5 @@
-﻿using AYellowpaper.SerializedCollections;
+﻿using System;
+using AYellowpaper.SerializedCollections;
 using Codice.CM.Client.Differences.Graphic;
 using MagusStudios.Arcanist.Tilemaps;
 using MagusStudios.Arcanist.Utils;
@@ -12,6 +13,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.PlayerLoop;
 using UnityEngine.Tilemaps;
 using static MagusStudios.Arcanist.WaveFunctionCollapse.WfcModuleSet;
 
@@ -44,6 +46,62 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
         private const int MAXIMUM_TILES = 128;
 
+        private static readonly Direction[] AllDirectionOrders = new Direction[24 * 4] // Don't ask. It's for efficiency. 
+        {
+            // 0
+            Direction.Up, Direction.Down, Direction.Left, Direction.Right,
+            // 1
+            Direction.Up, Direction.Down, Direction.Right, Direction.Left,
+            // 2
+            Direction.Up, Direction.Left, Direction.Down, Direction.Right,
+            // 3
+            Direction.Up, Direction.Left, Direction.Right, Direction.Down,
+            // 4
+            Direction.Up, Direction.Right, Direction.Down, Direction.Left,
+            // 5
+            Direction.Up, Direction.Right, Direction.Left, Direction.Down,
+
+            // 6
+            Direction.Down, Direction.Up, Direction.Left, Direction.Right,
+            // 7
+            Direction.Down, Direction.Up, Direction.Right, Direction.Left,
+            // 8
+            Direction.Down, Direction.Left, Direction.Up, Direction.Right,
+            // 9
+            Direction.Down, Direction.Left, Direction.Right, Direction.Up,
+            // 10
+            Direction.Down, Direction.Right, Direction.Up, Direction.Left,
+            // 11
+            Direction.Down, Direction.Right, Direction.Left, Direction.Up,
+
+            // 12
+            Direction.Left, Direction.Up, Direction.Down, Direction.Right,
+            // 13
+            Direction.Left, Direction.Up, Direction.Right, Direction.Down,
+            // 14
+            Direction.Left, Direction.Down, Direction.Up, Direction.Right,
+            // 15
+            Direction.Left, Direction.Down, Direction.Right, Direction.Up,
+            // 16
+            Direction.Left, Direction.Right, Direction.Up, Direction.Down,
+            // 17
+            Direction.Left, Direction.Right, Direction.Down, Direction.Up,
+
+            // 18
+            Direction.Right, Direction.Up, Direction.Down, Direction.Left,
+            // 19
+            Direction.Right, Direction.Up, Direction.Left, Direction.Down,
+            // 20
+            Direction.Right, Direction.Down, Direction.Up, Direction.Left,
+            // 21
+            Direction.Right, Direction.Down, Direction.Left, Direction.Up,
+            // 22
+            Direction.Right, Direction.Left, Direction.Up, Direction.Down,
+            // 23
+            Direction.Right, Direction.Left, Direction.Down, Direction.Up,
+        };
+
+
         private void Start()
         {
             //cache first tilemap in scene
@@ -62,6 +120,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                 Debug.LogError($"[{nameof(WaveFunctionCollapse)}]No tilemaps found in the scene");
                 return;
             }
+
             tilemap = tilemaps[0];
         }
 
@@ -97,7 +156,8 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
         public IEnumerator GenerateMapAnimatedCoroutine(Tilemap tilemap)
         {
-            Debug.Log($"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {moduleSet.name} and seed {seed}");
+            Debug.Log(
+                $"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {moduleSet.name} and seed {seed}");
 
             //prepare data needed for algorithm
             var modules = moduleSet.Modules;
@@ -183,10 +243,10 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             Debug.Log($"[{nameof(WaveFunctionCollapse)}] Building map...");
 
             for (int x = 0; x < width; x++)
-                for (int y = 0; y < height; y++)
-                {
-                    map[x, y] = world.map[x, y].GetCollapsedTile();
-                }
+            for (int y = 0; y < height; y++)
+            {
+                map[x, y] = world.map[x, y].GetCollapsedTile();
+            }
 
             //once finished, load the whole map
             //TileUtils.LoadMapData(tilemap, map, moduleSet.TileDatabase);
@@ -207,8 +267,10 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
             {
-                Debug.LogError($"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
-                throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
+                Debug.LogError(
+                    $"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
+                throw new System.Exception(
+                    $"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
             }
 
             // check for 0 tiles
@@ -224,18 +286,19 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             // === Initialization of Readonly Lookup Structures ===
 
             // modules (stored as an array of index information alongside a flattened array of all neighbor data)
-            NativeParallelHashMap<int, WfcJob.TileConstraints> modules = new NativeParallelHashMap<int, WfcJob.TileConstraints>(moduleDict.Count, Allocator.Persistent);
-            NativeList<int> allNeighbors = new NativeList<int>(Allocator.Persistent);
+            NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> modules =
+                new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count, Allocator.Persistent);
 
             // weights
-            NativeParallelHashMap<int, float> weights = new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
+            NativeParallelHashMap<int, float> weights =
+                new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
 
             // - initialize modules and weights -
 
-            // The module set is a dictionary for more flexibility in the editor. Native data does not support dictionaries however, so we create an
+            // The module set is a dictionary for more flexibility in the editor. Native data does not support dictionaries, however, so we create an
             // ordered array of all modules instead. The indices of this array will be used as the tile ids in the algorithm. We create a mapping
-            // of tile id (in the module set) -> index in the ordered array so that the output can be converted back to the ids
-            // used in the module set after generation. 
+            // of tile id (in the module set) -> index in the ordered array so that the output can be converted back to the module set's editor ids
+            // after generation returns the map
 
             // First, create the mapping
             Dictionary<int, int> moduleKeyToIndex = new Dictionary<int, int>();
@@ -248,66 +311,91 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                 mappingCount++;
             }
 
-            // Fill modules, allNeighbors, and weights
+            // Fill modules and weights
             int moduleCount = 0;
-            int neighborCount = 0;
             foreach (KeyValuePair<int, TileModule> kvp in moduleDict)
             {
                 TileModule module = kvp.Value;
-                WfcJob.TileConstraints nativeModule = new WfcJob.TileConstraints();
+                WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
-                // up
-                int neighborCountUp = module.compatibleNeighbors[Direction.Up].Count;
+                // initialize the module's allowed neighbors to nothing at first
+                nativeModule.allowedUp0 = 0;
+                nativeModule.allowedUp1 = 0;
+                nativeModule.allowedDown0 = 0;
+                nativeModule.allowedDown1 = 0;
+                nativeModule.allowedLeft0 = 0;
+                nativeModule.allowedLeft1 = 0;
+                nativeModule.allowedRight0 = 0;
+                nativeModule.allowedRight1 = 0;
 
-                nativeModule.upCount = neighborCountUp;
-                nativeModule.upStart = neighborCount;
-                neighborCount += neighborCountUp;
-
-                foreach (int neighbor in module.compatibleNeighbors[Direction.Up])
+                // UP
+                foreach (int v in module.compatibleNeighbors[Direction.Up])
                 {
-                    allNeighbors.Add(moduleKeyToIndex[neighbor]);
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedUp0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedUp1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
                 }
 
-                // down
-                int neighborCountDown = module.compatibleNeighbors[Direction.Down].Count;
-
-                nativeModule.downCount = neighborCountDown;
-                nativeModule.downStart = neighborCount;
-                neighborCount += neighborCountDown;
-
-                foreach (int neighbor in module.compatibleNeighbors[Direction.Down])
+                // DOWN
+                foreach (int v in module.compatibleNeighbors[Direction.Down])
                 {
-                    allNeighbors.Add(moduleKeyToIndex[neighbor]);
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedDown0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedDown1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
                 }
 
-                // left
-                int neighborCountLeft = module.compatibleNeighbors[Direction.Left].Count;
-
-                nativeModule.leftCount = neighborCountLeft;
-                nativeModule.leftStart = neighborCount;
-                neighborCount += neighborCountLeft;
-
-                foreach (int neighbor in module.compatibleNeighbors[Direction.Left])
+                // LEFT
+                foreach (int v in module.compatibleNeighbors[Direction.Left])
                 {
-                    allNeighbors.Add(moduleKeyToIndex[neighbor]);
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedLeft0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedLeft1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
                 }
 
-                // right
-                int neighborCountRight = module.compatibleNeighbors[Direction.Right].Count;
-
-                nativeModule.rightCount = neighborCountRight;
-                nativeModule.rightStart = neighborCount;
-                neighborCount += neighborCountRight;
-
-                foreach (int neighbor in module.compatibleNeighbors[Direction.Right])
+                // RIGHT
+                foreach (int v in module.compatibleNeighbors[Direction.Right])
                 {
-                    allNeighbors.Add(moduleKeyToIndex[neighbor]);
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedRight0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedRight1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
                 }
 
-                modules.Add(moduleCount, nativeModule);
                 weights.Add(moduleCount, module.weight);
+                modules.Add(moduleCount, nativeModule);
                 moduleCount++;
             }
+
+            // A flattened area of all permutations of four directions, precomputed and for use in generation for when
+            // the algorithm constrains neighbor cells, it does each direction in a random order
+            NativeArray<Direction> directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
 
             // === Initialization of Algorithm State ===
 
@@ -322,14 +410,14 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             // fill domains with all tiles to start
             for (int i = 0; i < cellCount; i++)
             {
-                cells[i] = WfcJob.Cell.CreateWithAllTiles(cellCount);
+                cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleDict.Count);
             }
 
             // === Create random generator ===
             var rng = new Unity.Mathematics.Random(seed);
 
             // === Initialize Stack for Propagation Step
-            NativeList<int> propagationStack = new NativeList<int>(cellCount, Allocator.Persistent);
+            NativeArray<int> propagationStack = new NativeArray<int>(cellCount, Allocator.Persistent);
 
             // === Initialize Output Structure ===
             NativeArray<int> output = new NativeArray<int>(cellCount, Allocator.Persistent);
@@ -338,7 +426,6 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             WfcJob wfc = new WfcJob
             {
                 Modules = modules,
-                AllNeighbors = allNeighbors.AsArray(),
                 Weights = weights,
                 Cells = cells,
                 CellEntropy = cellEntropy,
@@ -348,21 +435,22 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                 CellCount = cellCount,
                 Width = width,
                 Height = height,
+                AllDirectionPermutations = directions,
                 Output = output,
                 Flag = WfcJob.State.OK
             };
 
-            wfc.Execute();
+            wfc.Schedule().Complete();
 
             // === Convert and cleanup ===
             int[,] unconvertedMap = wfc.Output.ToSquare2DArray();
-            int[,] finalOutput = new  int[width, height];
+            int[,] finalOutput = new int[width, height];
 
             for (int i = 0; i < width; i++)
             {
                 for (int j = 0; j < height; j++)
                 {
-                    if(moduleIndexToKey[unconvertedMap[i, j]] != -1)
+                    if (unconvertedMap[i, j] != -1)
                         finalOutput[i, j] = moduleIndexToKey[unconvertedMap[i, j]];
                     else
                     {
@@ -372,11 +460,11 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             }
 
             modules.Dispose();
-            allNeighbors.Dispose();
             weights.Dispose();
             cells.Dispose();
             cellEntropy.Dispose();
             propagationStack.Dispose();
+            directions.Dispose();
             output.Dispose();
 
             return finalOutput;
@@ -395,21 +483,31 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
     }
 
 
-    struct WfcJob// : IJob
+    /// <summary>
+    /// A burst-compilable, preallocated, fast implementation of Wave Function Collapse.
+    /// </summary>
+    struct WfcJob : IJob
     {
         // Lookup structures - immutable, for reference only, and accessible in parallel
 
         // module constraints
-        [ReadOnly][NativeDisableParallelForRestriction] public NativeParallelHashMap<int, TileConstraints> Modules;
-        [ReadOnly][NativeDisableParallelForRestriction] public NativeArray<int> AllNeighbors;
+        [ReadOnly] [NativeDisableParallelForRestriction]
+        public NativeParallelHashMap<int, AllowedNeighborModule> Modules;
 
         // weights
-        [ReadOnly][NativeDisableParallelForRestriction] public NativeParallelHashMap<int, float> Weights;
+        [ReadOnly] [NativeDisableParallelForRestriction]
+        public NativeParallelHashMap<int, float> Weights;
+
+        [ReadOnly] [NativeDisableParallelForRestriction]
+        public NativeArray<Direction> AllDirectionPermutations;
 
         // Algorithm State
 
         // domains
-        public NativeArray<Cell> Cells;
+        public NativeArray<Cell> Cells; // this represents the grid of cells being operated upon
+        // each cell has a domain and a "selected" field (for efficiency) , which
+        // is -1 until the cell has collapsed to one outcome, in which case it is 
+        // set as the id of the selected tile for this cell
 
         // entropy
         public NativeArray<float> CellEntropy;
@@ -423,7 +521,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         public Unity.Mathematics.Random random;
 
         // stack for propagation step
-        public NativeList<int> PropagationStack;
+        public NativeArray<int> PropagationStack;
         public int PropagationStackTop;
 
         // output
@@ -432,7 +530,12 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         // state of operation (error, ok)
         public State Flag;
 
-        public enum State { OK, WARNING, ERROR }
+        public enum State
+        {
+            OK,
+            WARNING,
+            ERROR
+        }
 
         /// <summary>
         /// Represents one cell in the (flattened) grid that Wave Function Collapse operates upon. 
@@ -478,12 +581,12 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                 {
                     // fill lower 64 bits, then set upper (n-64) bits
                     cell.domainMask0 = ulong.MaxValue;
-                    int highBits = size - 64;    // 1..63
+                    int highBits = size - 64; // 1..63
                     cell.domainMask1 = ((1UL << highBits) - 1UL);
                 }
 
                 cell.selected = -1;
-                
+
                 return cell;
             }
 
@@ -519,16 +622,16 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         /// <summary>
         /// Query allNeighbors with the indices and counts here to find all the neighbor data
         /// </summary>
-        public struct TileConstraints
+        public struct AllowedNeighborModule
         {
-            public int upStart;
-            public int upCount;
-            public int downStart;
-            public int downCount;
-            public int leftStart;
-            public int leftCount;
-            public int rightStart;
-            public int rightCount;
+            public ulong allowedUp0;
+            public ulong allowedUp1;
+            public ulong allowedDown0;
+            public ulong allowedDown1;
+            public ulong allowedLeft0;
+            public ulong allowedLeft1;
+            public ulong allowedRight0;
+            public ulong allowedRight1;
         }
 
         public void Execute()
@@ -545,7 +648,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             {
                 done = WaveFunctionCollapse();
             }
-            
+
             // Prepare output
             for (int i = 0; i < CellCount; i++)
             {
@@ -555,14 +658,13 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
         private bool WaveFunctionCollapse()
         {
+            
             // Collapse a random lowest-entropy cell
             int selectedCell = GetRandomLowestEntropyCell();
             if (selectedCell == -1)
                 return true; // Algorithm finished
 
             CollapseCell(selectedCell);
-            
-            return true;
 
             // Push the initial collapsed cell
             PushToPropagationStack(selectedCell);
@@ -579,43 +681,60 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                 int x = cell % Width;
                 int y = cell / Width;
 
-                // ---- UP ----
-                if (y + 1 < Height)
-                {
-                    int neighborUp = cell + Width;
-                    if (ConstrainCell(cell, neighborUp))
-                        PushToPropagationStack(neighborUp);
-                }
+                int perm = random.NextInt(24);
+                int baseIdx = perm * 4;
 
-                // ---- DOWN ----
-                if (y - 1 >= 0)
+                for (int i = 0; i < 4; i++)
                 {
-                    int neighborDown = cell - Width;
-                    if (ConstrainCell(cell, neighborDown))
-                        PushToPropagationStack(neighborDown);
-                }
+                    switch (AllDirectionPermutations[baseIdx + i])
+                    {
+                        case Direction.Up:
+                            if (y + 1 < Height)
+                            {
+                                int n = cell + Width;
+                                if (ConstrainCell(n, cell, Direction.Up))
+                                    PushToPropagationStack(n);
+                            }
 
-                // ---- LEFT ----
-                if (x - 1 >= 0)
-                {
-                    int neighborLeft = cell - 1;
-                    if (ConstrainCell(cell, neighborLeft))
-                        PushToPropagationStack(neighborLeft);
-                }
+                            break;
 
-                // ---- RIGHT ----
-                if (x + 1 < Width)
-                {
-                    int neighborRight = cell + 1;
-                    if (ConstrainCell(cell, neighborRight))
-                        PushToPropagationStack(neighborRight);
+                        case Direction.Down:
+                            if (y - 1 >= 0)
+                            {
+                                int n = cell - Width;
+                                if (ConstrainCell(n, cell, Direction.Down))
+                                    PushToPropagationStack(n);
+                            }
+
+                            break;
+
+                        case Direction.Left:
+                            if (x - 1 >= 0)
+                            {
+                                int n = cell - 1;
+                                if (ConstrainCell(n, cell, Direction.Left))
+                                    PushToPropagationStack(n);
+                            }
+
+                            break;
+
+                        case Direction.Right:
+                            if (x + 1 < Width)
+                            {
+                                int n = cell + 1;
+                                if (ConstrainCell(n, cell, Direction.Right))
+                                    PushToPropagationStack(n);
+                            }
+
+                            break;
+                    }
                 }
             }
 
             // Reset the stack for the next collapse cycle
             PropagationStackTop = 0;
 
-            return false; // Not done yet
+            return false;
         }
 
 
@@ -630,9 +749,12 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             // error cells (no domain) and correctly collapsed cells (domain of 1)
             // are both ignored
             float minEntropy = float.MaxValue;
-            for (int i = 0; i < Cells.Length; i++)
+            for (int i = 0; i < CellEntropy.Length; i++)
             {
                 float entropy = CellEntropy[i];
+
+                if (entropy == 0) continue;
+
                 if (entropy < minEntropy)
                 {
                     minEntropy = entropy;
@@ -648,9 +770,14 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             // Count cells tied for minimum entropy (reservoir sampling)
             int selectedCell = -1;
             int tieCount = 0;
-            for (int i = 0; i < Cells.Length; i++)
+            for (int i = 0; i < CellEntropy.Length; i++)
             {
-                if (CellEntropy[i] == minEntropy) // possibly replace this with a threshold of tolerance instead of strict equality?
+                float entropy = CellEntropy[i];
+
+                if (entropy <= 0) continue;
+
+                if (entropy ==
+                    minEntropy) // possibly replace this with a threshold of tolerance instead of strict equality?
                 {
                     tieCount++;
                     // Reservoir sampling: select with probability 1/tieCount
@@ -688,6 +815,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                     {
                         continue;
                     }
+
                     sumWeights += weight;
                 }
             }
@@ -835,163 +963,131 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             UpdateEntropy(cellId);
         }
 
-        private bool ConstrainCell(int cellId, int neighbor)
+        private bool ConstrainCell(int cellToConstrain, int cellToEnforceAdjacency, Direction direction)
         {
-            Cell cell = Cells[cellId];
-            Cell neighborCell = Cells[neighbor];
-
-            // If neighbor is already collapsed to 0 possibilities, it cannot be constrained further
-            if (neighborCell.domainCount == 0)
-                return false;
-
-            // Compute the allowed mask for the neighbor based on the cell's domain
-            ulong allow0 = 0UL;
-            ulong allow1 = 0UL;
-
-            // For every tile still possible in "cell", OR-in the allowed neighbor tiles
-            // This is a fast bit iteration pattern: extract bits one at a time.
-
-            ulong mask0 = cell.domainMask0;
-            while (mask0 != 0)
-            {
-                ulong bit = mask0 & (ulong)-(long)mask0;  // lowest set bit
-                int tile = Tzcnt(mask0);
-                mask0 ^= bit;
-
-                TileConstraints tc = Modules[tile];
-                int start, count;
-
-                // use the correct direction based on the relationship
-                if (neighbor == cellId + Width)          // UP
-                {
-                    start = tc.upStart;
-                    count = tc.upCount;
-                }
-                else if (neighbor == cellId - Width)     // DOWN
-                {
-                    start = tc.downStart;
-                    count = tc.downCount;
-                }
-                else if (neighbor == cellId - 1)         // LEFT
-                {
-                    start = tc.leftStart;
-                    count = tc.leftCount;
-                }
-                else                                     // RIGHT
-                {
-                    start = tc.rightStart;
-                    count = tc.rightCount;
-                }
-
-                // OR-in all allowed neighbors for this tile
-                for (int i = 0; i < count; i++)
-                {
-                    int nbrTile = AllNeighbors[start + i];
-                    if (nbrTile < 64)
-                        allow0 |= 1UL << nbrTile;
-                    else
-                        allow1 |= 1UL << (nbrTile - 64);
-                }
-            }
-
-            ulong mask1 = cell.domainMask1;
-            while (mask1 != 0)
-            {
-                ulong bit = mask1 & (ulong)-(long)mask1;
-                int tile = Tzcnt(mask1) + 64;
-                mask1 ^= bit;
-
-                TileConstraints tc = Modules[tile];
-                int start, count;
-
-                if (neighbor == cellId + Width)          // UP
-                {
-                    start = tc.upStart;
-                    count = tc.upCount;
-                }
-                else if (neighbor == cellId - Width)     // DOWN
-                {
-                    start = tc.downStart;
-                    count = tc.downCount;
-                }
-                else if (neighbor == cellId - 1)         // LEFT
-                {
-                    start = tc.leftStart;
-                    count = tc.leftCount;
-                }
-                else                                     // RIGHT
-                {
-                    start = tc.rightStart;
-                    count = tc.rightCount;
-                }
-
-                for (int i = 0; i < count; i++)
-                {
-                    int nbrTile = AllNeighbors[start + i];
-                    if (nbrTile < 64)
-                        allow0 |= 1UL << nbrTile;
-                    else
-                        allow1 |= 1UL << (nbrTile - 64);
-                }
-            }
-
-
-            // Compute: neighbor.domainMask &= allowedMask
-            ulong new0 = neighborCell.domainMask0 & allow0;
-            ulong new1 = neighborCell.domainMask1 & allow1;
-
-            // If no change: no propagation needed
-            if (new0 == neighborCell.domainMask0 && new1 == neighborCell.domainMask1)
-                return false;
-
-            // Update domain
-            neighborCell.domainMask0 = new0;
-            neighborCell.domainMask1 = new1;
-
-            // Count bits
-            int count0 = PopCount(new0);
-            int count1 = PopCount(new1);
-            neighborCell.domainCount = count0 + count1;
-
-            Cells[neighbor] = neighborCell;
-
-            return true; // domain changed → must propagate
-
-            //todo update entropy??
+            Cell cell = Cells[cellToConstrain];
+            Cell enforcerCell = Cells[cellToEnforceAdjacency];
             
-            //todo update selected if collapsed from this
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Tzcnt(ulong value)
-        {
-            if (value == 0)
-                return 64;
-
-            int count = 0;
-            while ((value & 1UL) == 0UL)
+            //In the domain of the enforcer cell, which tiles are allowed in [direction] for each remaining possibility?
+            ulong enforcerMask0 = enforcerCell.domainMask0;
+            ulong enforcerMask1 = enforcerCell.domainMask1;
+            
+            ulong allowedMask0 = 0;
+            ulong allowedMask1 = 0;
+            
+            // todo this is wrong and too restrictive. the allowed masks need to be or'ed together, then that mask and'ed with the cell to constrain 
+            
+            // iterate through each possibility in the domain of the enforcer cell
+            while (enforcerMask0 != 0)
             {
-                count++;
-                value >>= 1;
+                ulong lowestBit = enforcerMask0 & (~enforcerMask0 + 1); // isolate lowest set bit
+                int index = math.tzcnt(lowestBit);
+                
+                switch (direction)
+                {
+                    case Direction.Up:
+                        allowedMask0 |= Modules[index].allowedUp0;
+                        allowedMask1 |= Modules[index].allowedUp1;
+                        break;
+                    case Direction.Down:
+                        allowedMask0 |= Modules[index].allowedDown0;
+                        allowedMask1 |= Modules[index].allowedDown1;
+                        break;
+                    case Direction.Left:
+                        allowedMask0 |= Modules[index].allowedLeft0;
+                        allowedMask1 |= Modules[index].allowedLeft1;
+                        break;
+                    case Direction.Right:
+                        allowedMask0 |= Modules[index].allowedRight0;
+                        allowedMask1 |= Modules[index].allowedRight1;
+                        break;
+                }
+                
+                enforcerMask0 &= enforcerMask0 - 1; // clear lowest set bit
             }
-            return count;
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int PopCount(ulong value)
-        {
-            // classic hack: "Hamming Weight" algorithm
-            value -= (value >> 1) & 0x5555555555555555UL;
-            value = (value & 0x3333333333333333UL) + ((value >> 2) & 0x3333333333333333UL);
-            value = (value + (value >> 4)) & 0x0F0F0F0F0F0F0F0FUL;
-            return (int)((value * 0x0101010101010101UL) >> 56);
-        }
+            while (enforcerMask1 != 0)
+            {
+                ulong lowestBit = enforcerMask1 & (~enforcerMask1 + 1); // isolate lowest set bit
+                int index = math.tzcnt(lowestBit) + 64;                 // offset into modules 64–127
 
+                switch (direction)
+                {
+                    case Direction.Up:
+                        allowedMask0 |= Modules[index].allowedUp0;
+                        allowedMask1 |= Modules[index].allowedUp1;
+                        break;
+                    case Direction.Down:
+                        allowedMask0 |= Modules[index].allowedDown0;
+                        allowedMask1 |= Modules[index].allowedDown1;
+                        break;
+                    case Direction.Left:
+                        allowedMask0 |= Modules[index].allowedLeft0;
+                        allowedMask1 |= Modules[index].allowedLeft1;
+                        break;
+                    case Direction.Right:
+                        allowedMask0 |= Modules[index].allowedRight0;
+                        allowedMask1 |= Modules[index].allowedRight1;
+                        break;
+                }
+
+                enforcerMask1 &= enforcerMask1 - 1; // clear lowest set bit
+            }
+            
+            ulong constrainedMask0 = cell.domainMask0;
+            ulong constrainedMask1 = cell.domainMask1;
+
+            constrainedMask0 &= allowedMask0;
+            constrainedMask1 &= allowedMask1;
+            
+            // No change → no propagation needed
+            if (constrainedMask0 == cell.domainMask0 && constrainedMask1 == cell.domainMask1)
+                return false;
+
+            // Update cell
+            cell.domainMask0 = constrainedMask0;
+            cell.domainMask1 = constrainedMask1;
+
+            // Recompute domain count
+            cell.domainCount =
+                math.countbits(constrainedMask0) +
+                math.countbits(constrainedMask1);
+
+            if (cell.domainCount == 0)
+            {
+                Cells[cellToConstrain] = cell;
+                UpdateEntropy(cellToConstrain);
+                return false; //don't propagate error cells
+            }
+
+            // Collapse cell if its domain is 1 element
+            if (cell.domainCount == 1)
+            {
+                if (cell.domainMask0 != 0)
+                {
+                    // Bit is in [0..63]
+                    cell.selected = math.tzcnt(cell.domainMask0);
+                }
+                else
+                {
+                    // Bit is in [64..127]
+                    cell.selected = 64 + math.tzcnt(cell.domainMask1);
+                }
+            }
+
+            Cells[cellToConstrain] = cell;
+
+            UpdateEntropy(cellToConstrain);
+
+            return true;
+        }
     }
 
+    /// <summary>
+    /// Used by the naive implementation of Wave Function Collapse. Has callbacks to animate the tiles changing. 
+    /// </summary>
     public class Cell
     {
-
         public Dictionary<Direction, Cell> Neighbors;
         private List<int> domain;
         public Vector2Int pos;
@@ -1002,7 +1098,11 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         public Cell(int[] domain, int x, int y)
         {
             this.domain = new List<int>();
-            foreach (int i in domain) { this.domain.Add(i); }
+            foreach (int i in domain)
+            {
+                this.domain.Add(i);
+            }
+
             Neighbors = new Dictionary<Direction, Cell>();
             pos.x = x;
             pos.y = y;
@@ -1092,17 +1192,17 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         /// <summary>
         /// Constrains this cell’s domain based on the neighbor’s possible tiles.
         /// </summary>
-        public bool Constrain(IReadOnlyList<int> neighborDomain,
-                              Direction direction,
-                              SerializedDictionary<int, TileModule> modules,
-                              Dictionary<int, float> weights)
+        public bool Constrain(IReadOnlyList<int> enforcerDomain,
+            Direction direction,
+            SerializedDictionary<int, TileModule> modules,
+            Dictionary<int, float> weights)
         {
             bool constrained = false;
 
             if (Collapsed) return false;
 
             HashSet<int> valid = new HashSet<int>();
-            foreach (int id in neighborDomain)
+            foreach (int id in enforcerDomain)
             {
                 foreach (int key in modules[id].compatibleNeighbors[direction])
                 {
@@ -1136,6 +1236,10 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         public int GetCollapsedTile() => domain.Count > 0 ? domain[0] : -1;
     }
 
+    /// <summary>
+    /// Naive implementation of Wave Function Collapse for demonstration purposes. Has callbacks to animate the
+    /// tiles changing. 
+    /// </summary>
     public class Grid
     {
         public Cell[,] map;
@@ -1155,10 +1259,10 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         /// <param name="modules"></param>
         /// <returns>Is the algorithm done, What cells were collapsed</returns>
         public bool WaveFunctionCollapse(Dictionary<int, float> weights,
-                                         SerializedDictionary<int, TileModule> modules,
-                                         ref List<Cell> cellsCollapsed,
-                                         System.Random random,
-                                         WaveFunctionCollapse.CellConstrainedHandler cellConstrainedHandler = null)
+            SerializedDictionary<int, TileModule> modules,
+            ref List<Cell> cellsCollapsed,
+            System.Random random,
+            WaveFunctionCollapse.CellConstrainedHandler cellConstrainedHandler = null)
         {
             //empty the passed-in list, which will be filled with the cells collapsed in this pass of the algorithm, useful for animating the pass later
             cellsCollapsed.Clear();
@@ -1189,6 +1293,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                     {
                         continue; //normal for edge tiles not to have neighbors and ignore them
                     }
+
                     if (neighbor.GetEntropy(weights) != 0)
                     {
                         bool propagate = neighbor.Constrain(domain, direction, modules, weights);

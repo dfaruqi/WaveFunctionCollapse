@@ -28,7 +28,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 int row = i / size;
                 int col = i % size;
-                result[row, col] = source[i];
+                result[col, row] = source[i];
             }
 
             return result;

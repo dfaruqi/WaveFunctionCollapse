@@ -3,55 +3,6 @@ using UnityEngine;
 
 namespace MagusStudios.Arcanist.Utils
 {
-    public static class Vector3Extension
-    {
-        public static Vector3 Rotate(this Vector3 v, float degrees)
-        {
-            return Quaternion.Euler(0, 0, degrees) * v;
-        }
-    }
-
-    public static class MathExtension
-    {
-        public static float RandomGaussian(float minValue = 0.0f, float maxValue = 1.0f)
-        {
-            float u, v, S;
-
-            do
-            {
-                u = 2.0f * UnityEngine.Random.value - 1.0f;
-                v = 2.0f * UnityEngine.Random.value - 1.0f;
-                S = u * u + v * v;
-            }
-            while (S >= 1.0f);
-
-            // Standard Normal Distribution
-            float std = u * Mathf.Sqrt(-2.0f * Mathf.Log(S) / S);
-
-            // Normal Distribution centered between the min and max value
-            // and clamped following the "three-sigma rule"
-            float mean = (minValue + maxValue) / 2.0f;
-            float sigma = (maxValue - mean) / 3.0f;
-            return Mathf.Clamp(std * sigma + mean, minValue, maxValue);
-        }
-    }
-
-    public static class RandomExtension
-    {
-        public static void Shuffle<T>(this IList<T> ts)
-        {
-            var count = ts.Count;
-            var last = count - 1;
-            for (var i = 0; i < last; ++i)
-            {
-                var r = UnityEngine.Random.Range(i, count);
-                var tmp = ts[i];
-                ts[i] = ts[r];
-                ts[r] = tmp;
-            }
-        }
-    }
-
     public static class VectorExtension
     {
         public static Vector3 ToVector3(this Vector2Int v)
