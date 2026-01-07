@@ -46,60 +46,61 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
         private const int MAXIMUM_TILES = 128;
 
-        private static readonly Direction[] AllDirectionOrders = new Direction[24 * 4] // Don't ask. It's for efficiency. 
-        {
-            // 0
-            Direction.Up, Direction.Down, Direction.Left, Direction.Right,
-            // 1
-            Direction.Up, Direction.Down, Direction.Right, Direction.Left,
-            // 2
-            Direction.Up, Direction.Left, Direction.Down, Direction.Right,
-            // 3
-            Direction.Up, Direction.Left, Direction.Right, Direction.Down,
-            // 4
-            Direction.Up, Direction.Right, Direction.Down, Direction.Left,
-            // 5
-            Direction.Up, Direction.Right, Direction.Left, Direction.Down,
+        private static readonly Direction[] AllDirectionOrders =
+            new Direction[24 * 4] // Don't ask. It's for efficiency. 
+            {
+                // 0
+                Direction.Up, Direction.Down, Direction.Left, Direction.Right,
+                // 1
+                Direction.Up, Direction.Down, Direction.Right, Direction.Left,
+                // 2
+                Direction.Up, Direction.Left, Direction.Down, Direction.Right,
+                // 3
+                Direction.Up, Direction.Left, Direction.Right, Direction.Down,
+                // 4
+                Direction.Up, Direction.Right, Direction.Down, Direction.Left,
+                // 5
+                Direction.Up, Direction.Right, Direction.Left, Direction.Down,
 
-            // 6
-            Direction.Down, Direction.Up, Direction.Left, Direction.Right,
-            // 7
-            Direction.Down, Direction.Up, Direction.Right, Direction.Left,
-            // 8
-            Direction.Down, Direction.Left, Direction.Up, Direction.Right,
-            // 9
-            Direction.Down, Direction.Left, Direction.Right, Direction.Up,
-            // 10
-            Direction.Down, Direction.Right, Direction.Up, Direction.Left,
-            // 11
-            Direction.Down, Direction.Right, Direction.Left, Direction.Up,
+                // 6
+                Direction.Down, Direction.Up, Direction.Left, Direction.Right,
+                // 7
+                Direction.Down, Direction.Up, Direction.Right, Direction.Left,
+                // 8
+                Direction.Down, Direction.Left, Direction.Up, Direction.Right,
+                // 9
+                Direction.Down, Direction.Left, Direction.Right, Direction.Up,
+                // 10
+                Direction.Down, Direction.Right, Direction.Up, Direction.Left,
+                // 11
+                Direction.Down, Direction.Right, Direction.Left, Direction.Up,
 
-            // 12
-            Direction.Left, Direction.Up, Direction.Down, Direction.Right,
-            // 13
-            Direction.Left, Direction.Up, Direction.Right, Direction.Down,
-            // 14
-            Direction.Left, Direction.Down, Direction.Up, Direction.Right,
-            // 15
-            Direction.Left, Direction.Down, Direction.Right, Direction.Up,
-            // 16
-            Direction.Left, Direction.Right, Direction.Up, Direction.Down,
-            // 17
-            Direction.Left, Direction.Right, Direction.Down, Direction.Up,
+                // 12
+                Direction.Left, Direction.Up, Direction.Down, Direction.Right,
+                // 13
+                Direction.Left, Direction.Up, Direction.Right, Direction.Down,
+                // 14
+                Direction.Left, Direction.Down, Direction.Up, Direction.Right,
+                // 15
+                Direction.Left, Direction.Down, Direction.Right, Direction.Up,
+                // 16
+                Direction.Left, Direction.Right, Direction.Up, Direction.Down,
+                // 17
+                Direction.Left, Direction.Right, Direction.Down, Direction.Up,
 
-            // 18
-            Direction.Right, Direction.Up, Direction.Down, Direction.Left,
-            // 19
-            Direction.Right, Direction.Up, Direction.Left, Direction.Down,
-            // 20
-            Direction.Right, Direction.Down, Direction.Up, Direction.Left,
-            // 21
-            Direction.Right, Direction.Down, Direction.Left, Direction.Up,
-            // 22
-            Direction.Right, Direction.Left, Direction.Up, Direction.Down,
-            // 23
-            Direction.Right, Direction.Left, Direction.Down, Direction.Up,
-        };
+                // 18
+                Direction.Right, Direction.Up, Direction.Down, Direction.Left,
+                // 19
+                Direction.Right, Direction.Up, Direction.Left, Direction.Down,
+                // 20
+                Direction.Right, Direction.Down, Direction.Up, Direction.Left,
+                // 21
+                Direction.Right, Direction.Down, Direction.Left, Direction.Up,
+                // 22
+                Direction.Right, Direction.Left, Direction.Up, Direction.Down,
+                // 23
+                Direction.Right, Direction.Left, Direction.Down, Direction.Up,
+            };
 
 
         private void Start()
@@ -658,7 +659,6 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
         private bool WaveFunctionCollapse()
         {
-            
             // Collapse a random lowest-entropy cell
             int selectedCell = GetRandomLowestEntropyCell();
             if (selectedCell == -1)
@@ -967,22 +967,20 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         {
             Cell cell = Cells[cellToConstrain];
             Cell enforcerCell = Cells[cellToEnforceAdjacency];
-            
+
             //In the domain of the enforcer cell, which tiles are allowed in [direction] for each remaining possibility?
             ulong enforcerMask0 = enforcerCell.domainMask0;
             ulong enforcerMask1 = enforcerCell.domainMask1;
-            
+
             ulong allowedMask0 = 0;
             ulong allowedMask1 = 0;
-            
-            // todo this is wrong and too restrictive. the allowed masks need to be or'ed together, then that mask and'ed with the cell to constrain 
-            
+
             // iterate through each possibility in the domain of the enforcer cell
             while (enforcerMask0 != 0)
             {
                 ulong lowestBit = enforcerMask0 & (~enforcerMask0 + 1); // isolate lowest set bit
                 int index = math.tzcnt(lowestBit);
-                
+
                 switch (direction)
                 {
                     case Direction.Up:
@@ -1002,14 +1000,14 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
                         allowedMask1 |= Modules[index].allowedRight1;
                         break;
                 }
-                
+
                 enforcerMask0 &= enforcerMask0 - 1; // clear lowest set bit
             }
 
             while (enforcerMask1 != 0)
             {
                 ulong lowestBit = enforcerMask1 & (~enforcerMask1 + 1); // isolate lowest set bit
-                int index = math.tzcnt(lowestBit) + 64;                 // offset into modules 64–127
+                int index = math.tzcnt(lowestBit) + 64; // offset into modules 64–127
 
                 switch (direction)
                 {
@@ -1033,13 +1031,13 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
                 enforcerMask1 &= enforcerMask1 - 1; // clear lowest set bit
             }
-            
+
             ulong constrainedMask0 = cell.domainMask0;
             ulong constrainedMask1 = cell.domainMask1;
 
             constrainedMask0 &= allowedMask0;
             constrainedMask1 &= allowedMask1;
-            
+
             // No change → no propagation needed
             if (constrainedMask0 == cell.domainMask0 && constrainedMask1 == cell.domainMask1)
                 return false;
@@ -1079,7 +1077,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
             UpdateEntropy(cellToConstrain);
 
-            return true;
+            return true; // we constrained this cell to a smaller domain, so return true
         }
     }
 
