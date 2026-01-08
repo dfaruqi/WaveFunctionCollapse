@@ -1,12 +1,11 @@
 using AYellowpaper.SerializedCollections;
-using MagusStudios.Arcanist.Tilemaps;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-namespace MagusStudios.Arcanist.Tilemaps
+namespace MagusStudios.WaveFunctionCollapse
 {
 
     [CustomEditor(typeof(TileDatabase))]

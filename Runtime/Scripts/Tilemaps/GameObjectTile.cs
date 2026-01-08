@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.Tilemaps;
 
 
-namespace MagusStudios.Arcanist.Tilemaps
+namespace MagusStudios.WaveFunctionCollapse
 {
     public class GameObjectTile : Tile
     {

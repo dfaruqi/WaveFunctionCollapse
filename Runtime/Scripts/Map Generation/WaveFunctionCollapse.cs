@@ -1,23 +1,15 @@
-﻿using System;
-using AYellowpaper.SerializedCollections;
-using Codice.CM.Client.Differences.Graphic;
-using MagusStudios.Arcanist.Tilemaps;
+﻿using AYellowpaper.SerializedCollections;
 using MagusStudios.Arcanist.Utils;
-using MagusStudios.Collections;
-using MagusStudios.WaveFunctionCollapse;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.PlayerLoop;
 using UnityEngine.Tilemaps;
-using static MagusStudios.Arcanist.WaveFunctionCollapse.WfcModuleSet;
 
-namespace MagusStudios.Arcanist.WaveFunctionCollapse
+namespace MagusStudios.WaveFunctionCollapse
 {
     /// <summary>
     /// Performs a simplified Wave Function Collapse using adjacency constraints defined in a WfcModuleSet.
@@ -254,16 +246,15 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
             yield break;
         }
-
-
+        
         /// <summary>
-        /// Generates a map of tile IDs according to the WFC algorithm. Optimized and burst-compilable.
+        /// [Fast] Generates a map of tile IDs according to the WFC algorithm. Optimized with jobs and the burst compiler.
         /// </summary>
         /// <returns></returns>
         /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum. </exception>
-        private int[,] GenerateMap()
+        private int[,] GenerateMap(List<int> border=null, Direction borderDirection=Direction.Up)
         {
-            SerializedDictionary<int, TileModule> moduleDict = moduleSet.Modules;
+            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
 
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
@@ -305,7 +296,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
             Dictionary<int, int> moduleKeyToIndex = new Dictionary<int, int>();
             Dictionary<int, int> moduleIndexToKey = new Dictionary<int, int>();
             int mappingCount = 0;
-            foreach (KeyValuePair<int, TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
             {
                 moduleKeyToIndex[kvp.Key] = mappingCount;
                 moduleIndexToKey[mappingCount] = kvp.Key;
@@ -314,9 +305,9 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
 
             // Fill modules and weights
             int moduleCount = 0;
-            foreach (KeyValuePair<int, TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
             {
-                TileModule module = kvp.Value;
+                WfcModuleSet.TileModule module = kvp.Value;
                 WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
                 // initialize the module's allowed neighbors to nothing at first
@@ -1192,7 +1183,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         /// </summary>
         public bool Constrain(IReadOnlyList<int> enforcerDomain,
             Direction direction,
-            SerializedDictionary<int, TileModule> modules,
+            SerializedDictionary<int, WfcModuleSet.TileModule> modules,
             Dictionary<int, float> weights)
         {
             bool constrained = false;
@@ -1257,7 +1248,7 @@ namespace MagusStudios.Arcanist.WaveFunctionCollapse
         /// <param name="modules"></param>
         /// <returns>Is the algorithm done, What cells were collapsed</returns>
         public bool WaveFunctionCollapse(Dictionary<int, float> weights,
-            SerializedDictionary<int, TileModule> modules,
+            SerializedDictionary<int, WfcModuleSet.TileModule> modules,
             ref List<Cell> cellsCollapsed,
             System.Random random,
             WaveFunctionCollapse.CellConstrainedHandler cellConstrainedHandler = null)

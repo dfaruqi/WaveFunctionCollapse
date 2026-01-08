@@ -1,10 +1,9 @@
-﻿using MagusStudios.Arcanist.Tilemaps;
-using System.IO;
+﻿using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-namespace MagusStudios.Arcanist.WaveFunctionCollapse
+namespace MagusStudios.WaveFunctionCollapse
 {
     [CustomEditor(typeof(WaveFunctionCollapse))]
     public class WaveFunctionCollapseEditor : Editor

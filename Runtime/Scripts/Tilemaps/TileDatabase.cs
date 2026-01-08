@@ -4,7 +4,7 @@ using System.Linq;
 using AYellowpaper.SerializedCollections;
 using System.Collections.Generic;
 
-namespace MagusStudios.Arcanist.Tilemaps
+namespace MagusStudios.WaveFunctionCollapse
 {
     [CreateAssetMenu(fileName = "TileDatabase", menuName = "Tiles/TileDatabase")]
     public class TileDatabase : ScriptableObject

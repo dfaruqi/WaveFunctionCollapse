@@ -3,7 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-namespace MagusStudios.Arcanist.Tilemaps
+namespace MagusStudios.WaveFunctionCollapse
 {
     public class TilemapNumberOverlay : MonoBehaviour
     {

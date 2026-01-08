@@ -1,7 +1,5 @@
 ﻿using AYellowpaper.SerializedCollections;
-using MagusStudios.Arcanist.Tilemaps;
 using MagusStudios.Arcanist.Utils;
-using MagusStudios.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,7 +8,7 @@ using UnityEngine;
 using UnityEngine.Tilemaps;
 
 
-namespace MagusStudios.Arcanist.WaveFunctionCollapse
+namespace MagusStudios.WaveFunctionCollapse
 {
 
     [CustomEditor(typeof(WfcModuleSet))]

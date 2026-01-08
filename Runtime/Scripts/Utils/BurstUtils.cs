@@ -1,8 +1,7 @@
-using MagusStudios.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
 
-namespace MagusStudios.Arcanist.WaveFunctionCollapse
+namespace MagusStudios.WaveFunctionCollapse
 {
     public static class BurstUtils
     {

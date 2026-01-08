@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MagusStudios.Collections
+namespace MagusStudios.WaveFunctionCollapse
 {
     /// <summary>
     /// A Unity-serializable HashSet wrapper. Unity serializes the internal List<T>;

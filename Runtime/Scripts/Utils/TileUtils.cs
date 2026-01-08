@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-namespace MagusStudios.Arcanist.Tilemaps
+namespace MagusStudios.WaveFunctionCollapse
 {
     public static class TileUtils
     {
@@ -64,7 +64,7 @@ namespace MagusStudios.Arcanist.Tilemaps
         /// <param name="tile"></param>
         public static void SetTileDynamic(this Tilemap tilemap, Vector3Int position, TileBase tile)
         {
-            //TODO spawn gameObjects for tiles of type GameObjectTile
+            //TODO spawn gameObjects for tiles of type GameObjectTile in overloaded function
             tilemap.SetTile(position, tile);
         }
 
@@ -76,19 +76,19 @@ namespace MagusStudios.Arcanist.Tilemaps
         /// <param name="tile"></param>
         public static void SetTile(this Tilemap tilemap, Vector3Int position, GameObjectTile tile)
         {
-            tilemap.SetTile(position, tile);
-            if (tile.Prefab == null)
-            {
-                Debug.LogError($"[{nameof(TilemapExtension)}] Tried to spawn a null prefab from GameObjectTile {tile.name} at position {position}");
-                return;
-            }
-
-            TilemapController tilemapController = tilemap.GetComponent<TilemapController>();
-            if(tilemapController == null)
-            {
-                Debug.LogError($"[{nameof(TilemapExtension)}] Tried to spawn a prefab from GameObjectTile {tile.name} at position {position}, but there was no TilemapController attached to the tilemap to manage it.");
-            }
-            GameObject go = GameObject.Instantiate(tile.Prefab, tilemap.GetCellCenterWorld(position), Quaternion.identity);
+            // tilemap.SetTile(position, tile);
+            // if (tile.Prefab == null)
+            // {
+            //     Debug.LogError($"[{nameof(TilemapExtension)}] Tried to spawn a null prefab from GameObjectTile {tile.name} at position {position}");
+            //     return;
+            // }
+            //
+            // TilemapController tilemapController = tilemap.GetComponent<TilemapController>();
+            // if(tilemapController == null)
+            // {
+            //     Debug.LogError($"[{nameof(TilemapExtension)}] Tried to spawn a prefab from GameObjectTile {tile.name} at position {position}, but there was no TilemapController attached to the tilemap to manage it.");
+            // }
+            // GameObject go = GameObject.Instantiate(tile.Prefab, tilemap.GetCellCenterWorld(position), Quaternion.identity);
         }
     }
 }

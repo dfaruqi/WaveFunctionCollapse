@@ -1,15 +1,11 @@
 ﻿using AYellowpaper.SerializedCollections;
-using MagusStudios.Arcanist.Tilemaps;
 using MagusStudios.Arcanist.Utils;
-using MagusStudios.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-namespace MagusStudios.Arcanist.WaveFunctionCollapse
+namespace MagusStudios.WaveFunctionCollapse
 {
     [CreateAssetMenu(fileName = "WfcModuleSet", menuName = "Wave Function Collapse/WfcModuleSet")]
     public class WfcModuleSet : ScriptableObject

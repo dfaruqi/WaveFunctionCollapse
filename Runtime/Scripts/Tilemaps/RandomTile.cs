@@ -1,9 +1,8 @@
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-namespace MagusStudios.Arcanist.Tilemaps
+namespace MagusStudios.WaveFunctionCollapse
 {
     [CreateAssetMenu(fileName = "RandomTile", menuName = "Tiles/RandomTile")]
     public class RandomTile : Tile

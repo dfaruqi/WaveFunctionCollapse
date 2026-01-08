@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-namespace MagusStudios.Arcanist.Utils
+namespace MagusStudios.WaveFunctionCollapse
 {
     public static class VectorExtension
     {
