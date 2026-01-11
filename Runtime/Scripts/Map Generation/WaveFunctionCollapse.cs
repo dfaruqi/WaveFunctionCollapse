@@ -8,6 +8,7 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Tilemaps;
+using Random = UnityEngine.Random;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
@@ -128,7 +129,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void GenerateMapAndApplyToTilemap(Tilemap tilemap)
         {
-            //start a stopwatch for efficiency analysis later
+            //start a stopwatch for efficiency analysis
             System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
             stopwatch.Start();
 
@@ -246,13 +247,164 @@ namespace MagusStudios.WaveFunctionCollapse
 
             yield break;
         }
-        
+
+        private struct Borders
+        {
+            public List<int> BorderUp;
+            public List<int> BorderDown;
+            public List<int> BorderLeft;
+            public List<int> BorderRight;
+        }
+
+        private void GenerateMapInChunks(int widthInChunks, int heightInChunks, int chunkWidth, int chunkHeight)
+        {
+            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
+
+            // First, check that the module set does not have too many tiles
+            if (moduleDict.Count >= MAXIMUM_TILES)
+            {
+                Debug.LogError(
+                    $"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
+                throw new System.Exception(
+                    $"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
+            }
+
+            // check for 0 tiles
+            if (moduleDict.Count == 0)
+            {
+                throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Module set has no tiles.");
+            }
+
+            // === Initialization of Readonly Lookup Structures (accessible in parallel) ===
+
+            // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
+            NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> modules =
+                new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count, Allocator.Persistent);
+
+            // weights
+            NativeParallelHashMap<int, float> weights =
+                new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
+
+            // - initialize modules and weights -
+
+            // The module set is a dictionary for more flexibility in the editor. Native data does not support dictionaries, however, so we create an
+            // ordered array of all modules instead. The indices of this array will be used as the tile ids in the algorithm. We create a mapping
+            // of tile id (in the module set) -> index in the ordered array so that the output can be converted back to the module set's editor ids
+            // after generation returns the map
+
+            // First, create the mapping
+            Dictionary<int, int> moduleKeyToIndex = new Dictionary<int, int>();
+            Dictionary<int, int> moduleIndexToKey = new Dictionary<int, int>();
+            int mappingCount = 0;
+            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
+            {
+                moduleKeyToIndex[kvp.Key] = mappingCount;
+                moduleIndexToKey[mappingCount] = kvp.Key;
+                mappingCount++;
+            }
+
+            // Fill modules and weights
+            int moduleCount = 0;
+            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
+            {
+                WfcModuleSet.TileModule module = kvp.Value;
+                WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
+
+                // initialize the module's allowed neighbors to nothing at first
+                nativeModule.allowedUp0 = 0;
+                nativeModule.allowedUp1 = 0;
+                nativeModule.allowedDown0 = 0;
+                nativeModule.allowedDown1 = 0;
+                nativeModule.allowedLeft0 = 0;
+                nativeModule.allowedLeft1 = 0;
+                nativeModule.allowedRight0 = 0;
+                nativeModule.allowedRight1 = 0;
+
+                // UP
+                foreach (int v in module.compatibleNeighbors[Direction.Up])
+                {
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedUp0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedUp1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
+                }
+
+                // DOWN
+                foreach (int v in module.compatibleNeighbors[Direction.Down])
+                {
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedDown0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedDown1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
+                }
+
+                // LEFT
+                foreach (int v in module.compatibleNeighbors[Direction.Left])
+                {
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedLeft0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedLeft1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
+                }
+
+                // RIGHT
+                foreach (int v in module.compatibleNeighbors[Direction.Right])
+                {
+                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                    if (compatibleNeighborIndex < 64)
+                    {
+                        nativeModule.allowedRight0 |= 1UL << compatibleNeighborIndex;
+                    }
+                    else
+                    {
+                        nativeModule.allowedRight1 |= 1UL << (compatibleNeighborIndex - 64);
+                    }
+                }
+
+                weights.Add(moduleCount, module.weight);
+                modules.Add(moduleCount, nativeModule);
+                moduleCount++;
+            }
+
+            // A flattened area of all permutations of four directions, precomputed and for use in generation for when
+            // the algorithm constrains neighbor cells, it does each direction in a random order
+            NativeArray<Direction> directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
+
+            for (int y = 0; y < heightInChunks; y++)
+            {
+                for (int x = 0; x < widthInChunks; x++)
+                {
+                }
+            }
+        }
+
         /// <summary>
         /// [Fast] Generates a map of tile IDs according to the WFC algorithm. Optimized with jobs and the burst compiler.
         /// </summary>
+        /// <param name="borders">Optional borders to enforce adjacency along the edges of this map, useful for creating
+        /// larger maps in chunks. </param>
         /// <returns></returns>
         /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum. </exception>
-        private int[,] GenerateMap(List<int> border=null, Direction borderDirection=Direction.Up)
+        private int[,] GenerateMap(Borders borders = default)
         {
             SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
 
@@ -277,7 +429,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // === Initialization of Readonly Lookup Structures ===
 
-            // modules (stored as an array of index information alongside a flattened array of all neighbor data)
+            // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
             NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> modules =
                 new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count, Allocator.Persistent);
 
@@ -392,7 +544,10 @@ namespace MagusStudios.WaveFunctionCollapse
             // === Initialization of Algorithm State ===
 
             // entropy 
-            NativeArray<float> cellEntropy = new NativeArray<float>(cellCount, Allocator.Persistent);
+            NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer> entropyHeap =
+                new NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer>(Allocator.Persistent, cellCount);
+            NativeArray<NativeHeapIndex> entropyIndices =
+                new NativeArray<NativeHeapIndex>(cellCount, Allocator.Persistent);
 
             // the starting entropy will be applied to all cells at the start of generation
 
@@ -403,6 +558,48 @@ namespace MagusStudios.WaveFunctionCollapse
             for (int i = 0; i < cellCount; i++)
             {
                 cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleDict.Count);
+            }
+
+            // Fill the optional borders
+            int bordersUpCount = borders.BorderUp?.Count ?? 0;
+            int bordersDownCount = borders.BorderDown?.Count ?? 0;
+            int bordersRightCount = borders.BorderRight?.Count ?? 0;
+            int bordersLeftCount = borders.BorderLeft?.Count ?? 0;
+
+            NativeArray<int> upBorder = new NativeArray<int>(Mathf.Min(width, bordersUpCount), Allocator.Persistent);
+            NativeArray<int> downBorder =
+                new NativeArray<int>(Mathf.Min(width, bordersDownCount), Allocator.Persistent);
+            NativeArray<int> leftBorder =
+                new NativeArray<int>(Mathf.Min(height, bordersLeftCount), Allocator.Persistent);
+            NativeArray<int> rightBorder =
+                new NativeArray<int>(Mathf.Min(height, bordersRightCount), Allocator.Persistent);
+
+            // ───── UP ─────
+            List<int> bordersUp = borders.BorderUp;
+            for (int i = 0; i < upBorder.Length; i++)
+            {
+                upBorder[i] = moduleKeyToIndex[bordersUp[i]];
+            }
+
+            // ───── DOWN ─────
+            List<int> bordersDown = borders.BorderDown;
+            for (int i = 0; i < downBorder.Length; i++)
+            {
+                downBorder[i] = moduleKeyToIndex[bordersDown[i]];
+            }
+
+            // ───── LEFT ─────
+            List<int> bordersLeft = borders.BorderLeft;
+            for (int i = 0; i < leftBorder.Length; i++)
+            {
+                leftBorder[i] = moduleKeyToIndex[bordersLeft[i]];
+            }
+
+            // ───── RIGHT ─────
+            List<int> bordersRight = borders.BorderRight;
+            for (int i = 0; i < rightBorder.Length; i++)
+            {
+                rightBorder[i] = moduleKeyToIndex[bordersRight[i]];
             }
 
             // === Create random generator ===
@@ -420,21 +617,30 @@ namespace MagusStudios.WaveFunctionCollapse
                 Modules = modules,
                 Weights = weights,
                 Cells = cells,
-                CellEntropy = cellEntropy,
+                AllDirectionPermutations = directions,
+                UpBorder = upBorder,
+                DownBorder = downBorder,
+                LeftBorder = leftBorder,
+                RightBorder = rightBorder,
+                EntropyHeap = entropyHeap,
+                EntropyIndices = entropyIndices,
                 random = rng,
                 PropagationStack = propagationStack,
                 PropagationStackTop = 0,
                 CellCount = cellCount,
                 Width = width,
                 Height = height,
-                AllDirectionPermutations = directions,
                 Output = output,
                 Flag = WfcJob.State.OK
             };
 
-            wfc.Schedule().Complete();
+            //wfc.Schedule().Complete();
+            wfc.Execute();
 
             // === Convert and cleanup ===
+
+            // Now that generation is complete, we use the mapping to convert the finished map back into the tile ids
+            // used in the module set.
             int[,] unconvertedMap = wfc.Output.ToSquare2DArray();
             int[,] finalOutput = new int[width, height];
 
@@ -454,10 +660,15 @@ namespace MagusStudios.WaveFunctionCollapse
             modules.Dispose();
             weights.Dispose();
             cells.Dispose();
-            cellEntropy.Dispose();
+            entropyHeap.Dispose();
             propagationStack.Dispose();
             directions.Dispose();
             output.Dispose();
+            upBorder.Dispose();
+            downBorder.Dispose();
+            leftBorder.Dispose();
+            rightBorder.Dispose();
+            entropyIndices.Dispose();
 
             return finalOutput;
         }
@@ -474,11 +685,10 @@ namespace MagusStudios.WaveFunctionCollapse
         }
     }
 
-
     /// <summary>
     /// A burst-compilable, preallocated, fast implementation of Wave Function Collapse.
     /// </summary>
-    struct WfcJob : IJob
+    struct WfcJob
     {
         // Lookup structures - immutable, for reference only, and accessible in parallel
 
@@ -493,6 +703,11 @@ namespace MagusStudios.WaveFunctionCollapse
         [ReadOnly] [NativeDisableParallelForRestriction]
         public NativeArray<Direction> AllDirectionPermutations;
 
+        [ReadOnly] public NativeArray<int> UpBorder;
+        [ReadOnly] public NativeArray<int> DownBorder;
+        [ReadOnly] public NativeArray<int> LeftBorder;
+        [ReadOnly] public NativeArray<int> RightBorder;
+
         // Algorithm State
 
         // domains
@@ -502,7 +717,8 @@ namespace MagusStudios.WaveFunctionCollapse
         // set as the id of the selected tile for this cell
 
         // entropy
-        public NativeArray<float> CellEntropy;
+        public NativeHeap<CellEntropy, EntropyComparer> EntropyHeap;
+        public NativeArray<NativeHeapIndex> EntropyIndices;
 
         // map size and cell count
         public int CellCount;
@@ -611,6 +827,20 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
+        public struct CellEntropy
+        {
+            public int Id;
+            public float Entropy;
+        }
+
+        public struct EntropyComparer : IComparer<CellEntropy>
+        {
+            public int Compare(CellEntropy x, CellEntropy y)
+            {
+                return x.Entropy.CompareTo(y.Entropy);
+            }
+        }
+
         /// <summary>
         /// Query allNeighbors with the indices and counts here to find all the neighbor data
         /// </summary>
@@ -629,12 +859,108 @@ namespace MagusStudios.WaveFunctionCollapse
         public void Execute()
         {
             // Initialize all cells to the starting entropy
-            for (int i = 0; i < CellEntropy.Length; i++)
+            for (int i = 0; i < Cells.Length; i++)
             {
-                UpdateEntropy(i);
+                NativeHeapIndex nativeHeapIndex = EntropyHeap.Insert(new CellEntropy()
+                {
+                    Entropy = GetEntropy(i),
+                    Id = i
+                });
+                EntropyIndices[i] = nativeHeapIndex;
             }
 
-            // Execute the algorithm until complete
+            // Enforce any constraints from optional borders of other maps
+
+            // top border
+            int index = (Height - 1) * Width;
+            for (int i = 0; i < UpBorder.Length; i++)
+            {
+                int enforcerTile = UpBorder[i];
+                ulong enforcerDomain0 = 0;
+                ulong enforcerDomain1 = 0;
+                if (enforcerTile < 64)
+                {
+                    enforcerDomain0 = (1UL << (enforcerTile));
+                }
+                else
+                {
+                    enforcerDomain1 = (1UL << (enforcerTile - 64));
+                }
+                if (ConstrainCell(index, enforcerDomain0, enforcerDomain1, Direction.Down))
+                    PushToPropagationStack(index);
+
+                index++;
+            }
+
+            // bottom border
+            index = 0;
+            for (int i = 0; i < DownBorder.Length; i++)
+            {
+                int enforcerTile = DownBorder[i];
+                ulong enforcerDomain0 = 0;
+                ulong enforcerDomain1 = 0;
+                if (enforcerTile < 64)
+                {
+                    enforcerDomain0 = (1UL << (enforcerTile));
+                }
+                else
+                {
+                    enforcerDomain1 = (1UL << (enforcerTile - 64));
+                }
+
+                if (ConstrainCell(index, enforcerDomain0, enforcerDomain1, Direction.Up))
+                    PushToPropagationStack(index);
+
+                index++;
+            }
+
+            // left border
+            index = 0;
+            for (int i = 0; i < LeftBorder.Length; i++)
+            {
+                int enforcerTile = LeftBorder[i];
+                ulong enforcerDomain0 = 0;
+                ulong enforcerDomain1 = 0;
+                if (enforcerTile < 64)
+                {
+                    enforcerDomain0 = (1UL << (enforcerTile));
+                }
+                else
+                {
+                    enforcerDomain1 = (1UL << (enforcerTile - 64));
+                }
+
+                if (ConstrainCell(index, enforcerDomain0, enforcerDomain1, Direction.Right))
+                    PushToPropagationStack(index);
+
+                index += Width;
+            }
+
+            // right border
+            index = Width - 1;
+            for (int i = 0; i < RightBorder.Length; i++)
+            {
+                int enforcerTile = LeftBorder[i];
+                ulong enforcerDomain0 = 0;
+                ulong enforcerDomain1 = 0;
+                if (enforcerTile < 64)
+                {
+                    enforcerDomain0 = (1UL << (enforcerTile));
+                }
+                else
+                {
+                    enforcerDomain1 = (1UL << (enforcerTile - 64));
+                }
+
+                if (ConstrainCell(index, enforcerDomain0, enforcerDomain1, Direction.Left))
+                    PushToPropagationStack(index);
+
+                index += Width;
+            }
+
+            Propagate();
+
+            // Execute passes of the algorithm until complete
             bool done = false;
             while (!done)
             {
@@ -648,6 +974,8 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
+        // One pass of the main algorithm, which collapses one lowest-entropy cell then recursively propagates constraints
+        // to neighboring tiles until no more constraint propagation is possible.
         private bool WaveFunctionCollapse()
         {
             // Collapse a random lowest-entropy cell
@@ -660,20 +988,31 @@ namespace MagusStudios.WaveFunctionCollapse
             // Push the initial collapsed cell
             PushToPropagationStack(selectedCell);
 
+            Propagate();
+
+            return false;
+        }
+
+        private void Propagate()
+        {
             // Propagation loop
             while (PropagationStackTop > 0)
             {
-                int cell = PopFromPropagationStack();
+                int enforcerCellIndex = PopFromPropagationStack();
 
                 // If a cell has entropy 0 it has no possibilities → no need to propagate
-                if (Cells[cell].domainCount == 0)
+                if (Cells[enforcerCellIndex].domainCount == 0)
                     continue;
 
-                int x = cell % Width;
-                int y = cell / Width;
+                int x = enforcerCellIndex % Width;
+                int y = enforcerCellIndex / Width;
 
                 int perm = random.NextInt(24);
                 int baseIdx = perm * 4;
+
+                Cell enforcerCell = Cells[enforcerCellIndex];
+                ulong enforcerDomain0 = enforcerCell.domainMask0;
+                ulong enforcerDomain1 = enforcerCell.domainMask1;
 
                 for (int i = 0; i < 4; i++)
                 {
@@ -682,9 +1021,9 @@ namespace MagusStudios.WaveFunctionCollapse
                         case Direction.Up:
                             if (y + 1 < Height)
                             {
-                                int n = cell + Width;
-                                if (ConstrainCell(n, cell, Direction.Up))
-                                    PushToPropagationStack(n);
+                                int neighborIndex = enforcerCellIndex + Width;
+                                if (ConstrainCell(neighborIndex, enforcerDomain0, enforcerDomain1, Direction.Up))
+                                    PushToPropagationStack(neighborIndex);
                             }
 
                             break;
@@ -692,9 +1031,9 @@ namespace MagusStudios.WaveFunctionCollapse
                         case Direction.Down:
                             if (y - 1 >= 0)
                             {
-                                int n = cell - Width;
-                                if (ConstrainCell(n, cell, Direction.Down))
-                                    PushToPropagationStack(n);
+                                int neighborIndex = enforcerCellIndex - Width;
+                                if (ConstrainCell(neighborIndex, enforcerDomain0, enforcerDomain1, Direction.Down))
+                                    PushToPropagationStack(neighborIndex);
                             }
 
                             break;
@@ -702,9 +1041,9 @@ namespace MagusStudios.WaveFunctionCollapse
                         case Direction.Left:
                             if (x - 1 >= 0)
                             {
-                                int n = cell - 1;
-                                if (ConstrainCell(n, cell, Direction.Left))
-                                    PushToPropagationStack(n);
+                                int neighborIndex = enforcerCellIndex - 1;
+                                if (ConstrainCell(neighborIndex, enforcerDomain0, enforcerDomain1, Direction.Left))
+                                    PushToPropagationStack(neighborIndex);
                             }
 
                             break;
@@ -712,9 +1051,9 @@ namespace MagusStudios.WaveFunctionCollapse
                         case Direction.Right:
                             if (x + 1 < Width)
                             {
-                                int n = cell + 1;
-                                if (ConstrainCell(n, cell, Direction.Right))
-                                    PushToPropagationStack(n);
+                                int neighborIndex = enforcerCellIndex + 1;
+                                if (ConstrainCell(neighborIndex, enforcerDomain0, enforcerDomain1, Direction.Right))
+                                    PushToPropagationStack(neighborIndex);
                             }
 
                             break;
@@ -724,8 +1063,6 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Reset the stack for the next collapse cycle
             PropagationStackTop = 0;
-
-            return false;
         }
 
 
@@ -735,62 +1072,39 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private int GetRandomLowestEntropyCell()
         {
-            // Find minimum entropy
-            // Entropy is 0 for a domain of 1 or less, meaning:
-            // error cells (no domain) and correctly collapsed cells (domain of 1)
-            // are both ignored
-            float minEntropy = float.MaxValue;
-            for (int i = 0; i < CellEntropy.Length; i++)
-            {
-                float entropy = CellEntropy[i];
+            if (EntropyHeap.Count == 0) return -1; // Algorithm complete.
 
-                if (entropy == 0) continue;
-
-                if (entropy < minEntropy)
-                {
-                    minEntropy = entropy;
-                }
-            }
-
-            // Check if we're done (no cells left to collapse)
-            if (minEntropy == float.MaxValue)
-            {
-                return -1; // Algorithm complete
-            }
-
-            // Count cells tied for minimum entropy (reservoir sampling)
-            int selectedCell = -1;
-            int tieCount = 0;
-            for (int i = 0; i < CellEntropy.Length; i++)
-            {
-                float entropy = CellEntropy[i];
-
-                if (entropy <= 0) continue;
-
-                if (entropy ==
-                    minEntropy) // possibly replace this with a threshold of tolerance instead of strict equality?
-                {
-                    tieCount++;
-                    // Reservoir sampling: select with probability 1/tieCount
-                    if (random.NextFloat() < 1.0f / tieCount)
-                    {
-                        selectedCell = i;
-                    }
-                }
-            }
-
-            return selectedCell;
+            return EntropyHeap.Peek().Id;
         }
 
         private void UpdateEntropy(int cellId)
+        {
+            float newEntropy = GetEntropy(cellId);
+
+            // When we retrieve the lowest entropy cell, we want to ignore any already collapsed cells, so we remove 
+            // them from the entropy heap
+            if (newEntropy <= 0)
+            {
+                NativeHeapIndex index = EntropyIndices[cellId];
+                if (!EntropyHeap.IsValidIndex(index)) return;
+                EntropyHeap.Remove(index);
+                return;
+            }
+
+            EntropyHeap.Remove(EntropyIndices[cellId]);
+            NativeHeapIndex nativeHeapIndex =
+                EntropyHeap.Insert(new CellEntropy() { Entropy = newEntropy, Id = cellId });
+            EntropyIndices[cellId] = nativeHeapIndex;
+        }
+
+        private float GetEntropy(int cellId)
         {
             var cell = Cells[cellId];
 
             // If domain is empty or has only one element, entropy is 0
             if (cell.domainCount <= 1)
             {
-                CellEntropy[cellId] = 0f;
-                return;
+                return 0f;
             }
 
             // Calculate sum of weights for normalization
@@ -827,8 +1141,7 @@ namespace MagusStudios.WaveFunctionCollapse
             // Avoid division by zero
             if (sumWeights <= 0f)
             {
-                CellEntropy[cellId] = 0f;
-                return;
+                return 0f;
             }
 
             // Calculate Shannon entropy: H = -Σ(p_i * log(p_i))
@@ -868,7 +1181,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
             }
 
-            CellEntropy[cellId] = entropy;
+            return entropy;
         }
 
         private void CollapseCell(int cellId)
@@ -954,22 +1267,27 @@ namespace MagusStudios.WaveFunctionCollapse
             UpdateEntropy(cellId);
         }
 
-        private bool ConstrainCell(int cellToConstrain, int cellToEnforceAdjacency, Direction direction)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="cellToConstrain">Cell that will be constrained</param>
+        /// <param name="enforcerDomain0">Mask representing the domain of tile ids (0-63) enforcing neighbor constraints.</param>
+        /// <param name="enforcerDomain1">Mask representing the domain of tile ids (64-127) enforcing neighbor constraints.</param>
+        /// <param name="direction">Direction from enforcer cell to the cell to constrain</param>
+        /// <returns></returns>
+        private bool ConstrainCell(int cellToConstrain, ulong enforcerDomain0, ulong enforcerDomain1, Direction direction)
         {
             Cell cell = Cells[cellToConstrain];
-            Cell enforcerCell = Cells[cellToEnforceAdjacency];
 
-            //In the domain of the enforcer cell, which tiles are allowed in [direction] for each remaining possibility?
-            ulong enforcerMask0 = enforcerCell.domainMask0;
-            ulong enforcerMask1 = enforcerCell.domainMask1;
-
+            // In the domain of the enforcer cell, which tiles are allowed in [direction] for each remaining possibility?
+            // We will OR-in all the possibilities declared in the module set. 
             ulong allowedMask0 = 0;
             ulong allowedMask1 = 0;
 
             // iterate through each possibility in the domain of the enforcer cell
-            while (enforcerMask0 != 0)
+            while (enforcerDomain0 != 0)
             {
-                ulong lowestBit = enforcerMask0 & (~enforcerMask0 + 1); // isolate lowest set bit
+                ulong lowestBit = enforcerDomain0 & (~enforcerDomain0 + 1); // isolate lowest set bit
                 int index = math.tzcnt(lowestBit);
 
                 switch (direction)
@@ -992,12 +1310,12 @@ namespace MagusStudios.WaveFunctionCollapse
                         break;
                 }
 
-                enforcerMask0 &= enforcerMask0 - 1; // clear lowest set bit
+                enforcerDomain0 &= enforcerDomain0 - 1; // clear lowest set bit
             }
 
-            while (enforcerMask1 != 0)
+            while (enforcerDomain1 != 0)
             {
-                ulong lowestBit = enforcerMask1 & (~enforcerMask1 + 1); // isolate lowest set bit
+                ulong lowestBit = enforcerDomain1 & (~enforcerDomain1 + 1); // isolate lowest set bit
                 int index = math.tzcnt(lowestBit) + 64; // offset into modules 64–127
 
                 switch (direction)
@@ -1020,7 +1338,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         break;
                 }
 
-                enforcerMask1 &= enforcerMask1 - 1; // clear lowest set bit
+                enforcerDomain1 &= enforcerDomain1 - 1; // clear lowest set bit
             }
 
             ulong constrainedMask0 = cell.domainMask0;
@@ -1227,7 +1545,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
     /// <summary>
     /// Naive implementation of Wave Function Collapse for demonstration purposes. Has callbacks to animate the
-    /// tiles changing. 
+    /// tiles changing.
     /// </summary>
     public class Grid
     {

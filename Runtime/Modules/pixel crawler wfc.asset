@@ -25,13 +25,64 @@ MonoBehaviour:
               serializedList: 000000000100000002000000030000000400000005000000060000002700000028000000
           - Key: 1
             Value:
-              serializedList: 000000001d00000020000000210000002200000025000000260000002d0000002e000000
+              serializedList: 000000001d00000021000000200000002200000025000000260000002d0000002e000000
           - Key: 2
             Value:
-              serializedList: 0000000003000000060000000f00000011000000160000001b00000020000000250000002e000000
+              serializedList: 000000002000000003000000060000000f00000011000000160000001b000000250000002e000000
           - Key: 3
             Value:
-              serializedList: 0000000001000000040000000e00000010000000150000001c0000001d000000220000002d000000
+              serializedList: 000000001d00000001000000040000000e00000010000000150000001c000000220000002d000000
+    - Key: 29
+      Value:
+        weight: 0.5
+        compatibleNeighbors:
+          _serializedList:
+          - Key: 0
+            Value:
+              serializedList: 000000000600000001000000
+          - Key: 1
+            Value:
+              serializedList: 100000001e000000
+          - Key: 2
+            Value:
+              serializedList: 000000000f0000001b000000
+          - Key: 3
+            Value:
+              serializedList: 210000001e000000
+    - Key: 33
+      Value:
+        weight: 0.5
+        compatibleNeighbors:
+          _serializedList:
+          - Key: 0
+            Value:
+              serializedList: 00000000040000000500000006000000
+          - Key: 1
+            Value:
+              serializedList: 08000000
+          - Key: 2
+            Value:
+              serializedList: 1d000000210000001f000000
+          - Key: 3
+            Value:
+              serializedList: 20000000210000001e000000
+    - Key: 32
+      Value:
+        weight: 0.5
+        compatibleNeighbors:
+          _serializedList:
+          - Key: 0
+            Value:
+              serializedList: 040000000000000003000000
+          - Key: 1
+            Value:
+              serializedList: 110000001f000000
+          - Key: 2
+            Value:
+              serializedList: 210000001f000000
+          - Key: 3
+            Value:
+              serializedList: 000000000e0000001c000000
     - Key: 1
       Value:
         weight: 0.5
@@ -42,10 +93,10 @@ MonoBehaviour:
               serializedList: 0700000010000000
           - Key: 1
             Value:
-              serializedList: 00000000
+              serializedList: 000000001d00000025000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 00000000160000001b000000
           - Key: 3
             Value:
               serializedList: 0200000007000000
@@ -59,7 +110,7 @@ MonoBehaviour:
               serializedList: 08000000
           - Key: 1
             Value:
-              serializedList: 00000000
+              serializedList: 00000000220000002600000025000000
           - Key: 2
             Value:
               serializedList: 010000000200000009000000
@@ -76,13 +127,13 @@ MonoBehaviour:
               serializedList: 0900000011000000
           - Key: 1
             Value:
-              serializedList: 00000000
+              serializedList: 000000002000000022000000
           - Key: 2
             Value:
               serializedList: 0200000009000000
           - Key: 3
             Value:
-              serializedList: 00000000
+              serializedList: 00000000150000001c000000
     - Key: 4
       Value:
         weight: 1
@@ -93,10 +144,10 @@ MonoBehaviour:
               serializedList: 0a0000000e000000
           - Key: 1
             Value:
-              serializedList: 00000000
+              serializedList: 000000002000000021000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 0000000011000000
           - Key: 3
             Value:
               serializedList: 050000000a00000027000000
@@ -110,7 +161,7 @@ MonoBehaviour:
               serializedList: 0b0000000c000000
           - Key: 1
             Value:
-              serializedList: 00000000
+              serializedList: 0000000021000000
           - Key: 2
             Value:
               serializedList: 04000000050000001b00000028000000
@@ -127,13 +178,13 @@ MonoBehaviour:
               serializedList: 0d0000000f000000
           - Key: 1
             Value:
-              serializedList: 00000000
+              serializedList: 000000001d00000021000000
           - Key: 2
             Value:
               serializedList: 050000000d00000028000000
           - Key: 3
             Value:
-              serializedList: 00000000
+              serializedList: 0000000010000000
     - Key: 7
       Value:
         weight: 0.5
@@ -238,7 +289,7 @@ MonoBehaviour:
               serializedList: 0b0000000d0000000f0000001a000000
     - Key: 13
       Value:
-        weight: 1
+        weight: 0.5
         compatibleNeighbors:
           _serializedList:
           - Key: 0
@@ -266,7 +317,7 @@ MonoBehaviour:
               serializedList: 04000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 000000002000000011000000
           - Key: 3
             Value:
               serializedList: 0b0000001200000029000000
@@ -286,7 +337,7 @@ MonoBehaviour:
               serializedList: 0c000000140000002a000000
           - Key: 3
             Value:
-              serializedList: 00000000
+              serializedList: 000000001d00000010000000
     - Key: 16
       Value:
         weight: 0.5
@@ -300,7 +351,7 @@ MonoBehaviour:
               serializedList: 01000000100000001e000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 00000000060000000f000000160000001b00000025000000
           - Key: 3
             Value:
               serializedList: 08000000
@@ -320,7 +371,7 @@ MonoBehaviour:
               serializedList: 08000000
           - Key: 3
             Value:
-              serializedList: 00000000
+              serializedList: 00000000040000000e000000150000001c00000022000000
     - Key: 18
       Value:
         weight: 1
@@ -354,7 +405,7 @@ MonoBehaviour:
               serializedList: 1200000013000000150000001900000018000000
           - Key: 3
             Value:
-              serializedList: 13000000140000001600000018000000
+              serializedList: 1300000014000000160000001700000018000000
     - Key: 20
       Value:
         weight: 1
@@ -385,7 +436,7 @@ MonoBehaviour:
               serializedList: 0e000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 000000000300000011000000
           - Key: 3
             Value:
               serializedList: 130000001700000018000000
@@ -405,7 +456,7 @@ MonoBehaviour:
               serializedList: 130000001900000018000000
           - Key: 3
             Value:
-              serializedList: 00000000
+              serializedList: 000000000100000010000000
     - Key: 23
       Value:
         weight: 1
@@ -416,10 +467,10 @@ MonoBehaviour:
               serializedList: 18000000
           - Key: 1
             Value:
-              serializedList: 12000000
+              serializedList: 120000001a000000
           - Key: 2
             Value:
-              serializedList: 15000000
+              serializedList: 1500000013000000
           - Key: 3
             Value:
               serializedList: 18000000
@@ -433,10 +484,10 @@ MonoBehaviour:
               serializedList: 180000002300000024000000260000002b0000002c000000
           - Key: 1
             Value:
-              serializedList: 130000001700000018000000190000001a000000290000002a000000
+              serializedList: 13000000170000001800000019000000290000002a000000
           - Key: 2
             Value:
-              serializedList: 17000000180000001a0000001c00000013000000230000001500000012000000
+              serializedList: 17000000180000001a0000001c00000023000000130000001500000012000000
           - Key: 3
             Value:
               serializedList: 18000000190000001b00000024000000130000001600000014000000
@@ -459,12 +510,12 @@ MonoBehaviour:
               serializedList: 1600000013000000
     - Key: 26
       Value:
-        weight: 1
+        weight: 0.5
         compatibleNeighbors:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 1a00000018000000
+              serializedList: 1a00000017000000
           - Key: 1
             Value:
               serializedList: 150000001a000000
@@ -476,7 +527,7 @@ MonoBehaviour:
               serializedList: 18000000
     - Key: 27
       Value:
-        weight: 2
+        weight: 1.5
         compatibleNeighbors:
           _serializedList:
           - Key: 0
@@ -490,10 +541,10 @@ MonoBehaviour:
               serializedList: 18000000
           - Key: 3
             Value:
-              serializedList: 05000000000000000b000000
+              serializedList: 05000000000000000b000000100000001d00000001000000
     - Key: 28
       Value:
-        weight: 2
+        weight: 1
         compatibleNeighbors:
           _serializedList:
           - Key: 0
@@ -504,27 +555,10 @@ MonoBehaviour:
               serializedList: 150000001c00000023000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 00000000110000002000000003000000
           - Key: 3
             Value:
               serializedList: 18000000
-    - Key: 29
-      Value:
-        weight: 0.5
-        compatibleNeighbors:
-          _serializedList:
-          - Key: 0
-            Value:
-              serializedList: 00000000
-          - Key: 1
-            Value:
-              serializedList: 100000001e000000
-          - Key: 2
-            Value:
-              serializedList: 00000000
-          - Key: 3
-            Value:
-              serializedList: 1e00000021000000
     - Key: 30
       Value:
         weight: 0.5
@@ -559,40 +593,6 @@ MonoBehaviour:
           - Key: 3
             Value:
               serializedList: 2000000021000000
-    - Key: 32
-      Value:
-        weight: 0.5
-        compatibleNeighbors:
-          _serializedList:
-          - Key: 0
-            Value:
-              serializedList: 00000000
-          - Key: 1
-            Value:
-              serializedList: 110000001f000000
-          - Key: 2
-            Value:
-              serializedList: 1f00000021000000
-          - Key: 3
-            Value:
-              serializedList: 00000000
-    - Key: 33
-      Value:
-        weight: 0.5
-        compatibleNeighbors:
-          _serializedList:
-          - Key: 0
-            Value:
-              serializedList: 00000000
-          - Key: 1
-            Value:
-              serializedList: 08000000
-          - Key: 2
-            Value:
-              serializedList: 1d000000210000001f000000
-          - Key: 3
-            Value:
-              serializedList: 21000000200000001e000000
     - Key: 34
       Value:
         weight: 1
@@ -600,19 +600,19 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 00000000
+              serializedList: 000000000300000002000000
           - Key: 1
             Value:
               serializedList: 1c00000023000000
           - Key: 2
             Value:
-              serializedList: 00000000
+              serializedList: 0000000011000000
           - Key: 3
             Value:
               serializedList: 23000000260000002b000000
     - Key: 35
       Value:
-        weight: 2
+        weight: 1
         compatibleNeighbors:
           _serializedList:
           - Key: 0
@@ -651,7 +651,7 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 00000000
+              serializedList: 000000000100000002000000
           - Key: 1
             Value:
               serializedList: 1b00000024000000
@@ -660,7 +660,7 @@ MonoBehaviour:
               serializedList: 24000000260000002c000000
           - Key: 3
             Value:
-              serializedList: 00000000
+              serializedList: 0000000010000000
     - Key: 38
       Value:
         weight: 1
@@ -668,7 +668,7 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 00000000
+              serializedList: 0000000002000000
           - Key: 1
             Value:
               serializedList: 18000000
