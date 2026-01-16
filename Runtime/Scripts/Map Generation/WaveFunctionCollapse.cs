@@ -8,7 +8,6 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Tilemaps;
-using Random = UnityEngine.Random;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
@@ -389,10 +388,11 @@ namespace MagusStudios.WaveFunctionCollapse
             // the algorithm constrains neighbor cells, it does each direction in a random order
             NativeArray<Direction> directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
 
-            for (int y = 0; y < heightInChunks; y++)
+            for(int y = 0; y < heightInChunks; y+=2)
             {
-                for (int x = 0; x < widthInChunks; x++)
+                for (int x = 0; x < widthInChunks; x += 2)
                 {
+                    
                 }
             }
         }
@@ -634,26 +634,22 @@ namespace MagusStudios.WaveFunctionCollapse
                 Flag = WfcJob.State.OK
             };
 
-            //wfc.Schedule().Complete();
-            wfc.Execute();
+            wfc.Schedule().Complete();
 
             // === Convert and cleanup ===
 
+          
             // Now that generation is complete, we use the mapping to convert the finished map back into the tile ids
             // used in the module set.
-            int[,] unconvertedMap = wfc.Output.ToSquare2DArray();
+     
             int[,] finalOutput = new int[width, height];
 
-            for (int i = 0; i < width; i++)
+            for (int y = 0; y < height; y++)
             {
-                for (int j = 0; j < height; j++)
+                int rowOffset = y * width;
+                for (int x = 0; x < width; x++)
                 {
-                    if (unconvertedMap[i, j] != -1)
-                        finalOutput[i, j] = moduleIndexToKey[unconvertedMap[i, j]];
-                    else
-                    {
-                        finalOutput[i, j] = -1;
-                    }
+                    finalOutput[x, y] = moduleIndexToKey[output[rowOffset + x]];
                 }
             }
 
@@ -688,7 +684,7 @@ namespace MagusStudios.WaveFunctionCollapse
     /// <summary>
     /// A burst-compilable, preallocated, fast implementation of Wave Function Collapse.
     /// </summary>
-    struct WfcJob
+    struct WfcJob : IJob
     {
         // Lookup structures - immutable, for reference only, and accessible in parallel
 
@@ -1188,11 +1184,11 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             var cell = Cells[cellId];
 
-            // If already collapsed, exit (this should not happen...)
+            // If already collapsed, exit (this represents a standard constraint error in generation)
             if (cell.domainCount <= 1)
             {
                 if (Flag == State.OK)
-                    Flag = State.WARNING;
+                    Flag = State.ERROR;
                 return;
             }
 
