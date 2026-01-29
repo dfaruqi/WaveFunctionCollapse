@@ -68,7 +68,6 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 //update its compatible neighbors
-                //TODO, for each adjacent position in the tilemap, if there is a tile there, add it to the corresponding domain (up, down, left, or right)
                 foreach (Direction direction in DirectionExtension.EnumerateAll())
                 {
                     TileBase neighborTileBase = tilemap.GetTile(pos + direction.ToVector3Int());

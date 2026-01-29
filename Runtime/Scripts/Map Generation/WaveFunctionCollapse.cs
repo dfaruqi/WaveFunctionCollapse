@@ -5,9 +5,11 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Tilemaps;
+using Random = Unity.Mathematics.Random;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
@@ -97,10 +99,10 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void Start()
         {
-            //cache first tilemap in scene
+            // cache first tilemap in scene
             GetFirstTilemapInScene();
 
-            //cache domain overlay
+            // cache domain overlay
             _debugOverlay = GetComponent<TilemapNumberOverlay>();
         }
 
@@ -117,10 +119,12 @@ namespace MagusStudios.WaveFunctionCollapse
             tilemap = tilemaps[0];
         }
 
-        //called from button in editor
+        // called from button in editor script (see WaveFunctionCollapseEditor)
         public void Generate()
         {
             StopAllCoroutines();
+
+            GetFirstTilemapInScene(); // update the tilemap
 
             if (animate) GenerateMapAnimated(tilemap);
             else GenerateMapAndApplyToTilemap(tilemap);
@@ -132,7 +136,15 @@ namespace MagusStudios.WaveFunctionCollapse
             System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
             stopwatch.Start();
 
-            int[,] map = GenerateMap();
+            // Borders borders = new Borders();
+            // borders.BorderDown = new List<int>(64);
+            // for (int i = 0; i < 64; i++)
+            // {
+            //     borders.BorderDown.Add(0);
+            // }
+            
+            //int[,] map = GenerateMap(borders);
+            int[,] map = GenerateMapInChunks(new Vector2Int(4, 4), new Vector2Int(32, 32));
 
             stopwatch.Stop();
 
@@ -247,6 +259,7 @@ namespace MagusStudios.WaveFunctionCollapse
             yield break;
         }
 
+        // Contains border information
         private struct Borders
         {
             public List<int> BorderUp;
@@ -255,9 +268,128 @@ namespace MagusStudios.WaveFunctionCollapse
             public List<int> BorderRight;
         }
 
-        private void GenerateMapInChunks(int widthInChunks, int heightInChunks, int chunkWidth, int chunkHeight)
+        private class WfcState
+        {
+            public readonly NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer> EntropyHeap;
+            public readonly NativeArray<NativeHeapIndex> EntropyIndices;
+            public readonly NativeArray<WfcJob.Cell> Cells;
+            public readonly NativeArray<int> PropagationStack;
+            public readonly NativeArray<int> Output;
+            public readonly NativeArray<int> UpBorder;
+            public readonly NativeArray<int> DownBorder;
+            public readonly NativeArray<int> LeftBorder;
+            public readonly NativeArray<int> RightBorder;
+
+            public WfcState(Vector2Int size, int moduleCount, Borders borders = default)
+            {
+                int cellCount = size.x * size.y;
+
+                // entropy 
+                EntropyHeap =
+                    new NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer>(Allocator.Persistent, cellCount);
+
+                EntropyIndices =
+                    new NativeArray<NativeHeapIndex>(cellCount, Allocator.Persistent);
+
+                // the starting entropy will be applied to all cells at the start of generation
+
+                Cells = new NativeArray<WfcJob.Cell>(cellCount, Allocator.Persistent);
+
+                // fill domains with all tiles to start
+                for (int i = 0; i < cellCount; i++)
+                {
+                    Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
+                }
+
+                // domains
+                NativeArray<WfcJob.Cell> cells = new NativeArray<WfcJob.Cell>(cellCount, Allocator.Persistent);
+
+                // fill domains with all tiles to start
+                for (int i = 0;
+                     i < cellCount;
+                     i++)
+                {
+                    cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
+                }
+
+                // === Initialize Stack for Propagation Step
+                PropagationStack = new NativeArray<int>(cellCount, Allocator.Persistent);
+
+                // === Initialize Output Structure ===
+                Output = new NativeArray<int>(cellCount, Allocator.Persistent);
+
+                // Fill the optional borders
+                int bordersUpCount = borders.BorderUp?.Count ?? 0;
+                int bordersDownCount = borders.BorderDown?.Count ?? 0;
+                int bordersRightCount = borders.BorderRight?.Count ?? 0;
+                int bordersLeftCount = borders.BorderLeft?.Count ?? 0;
+
+                UpBorder = new NativeArray<int>(Mathf.Min(size.x, bordersUpCount), Allocator.Persistent);
+                DownBorder = new NativeArray<int>(Mathf.Min(size.x, bordersDownCount), Allocator.Persistent);
+                LeftBorder = new NativeArray<int>(Mathf.Min(size.y, bordersLeftCount), Allocator.Persistent);
+                RightBorder = new NativeArray<int>(Mathf.Min(size.y, bordersRightCount), Allocator.Persistent);
+
+                // ───── UP ─────
+                List<int> bordersUp = borders.BorderUp;
+                if (bordersUp != null)
+                {
+                    for (int i = 0; i < UpBorder.Length; i++)
+                    {
+                        UpBorder[i] = bordersUp[i];
+                    }
+                }
+
+
+                // ───── DOWN ─────
+                List<int> bordersDown = borders.BorderDown;
+                if (bordersDown != null)
+                {
+                    for (int i = 0; i < DownBorder.Length; i++)
+                    {
+                        DownBorder[i] = bordersDown[i];
+                    }
+                }
+
+                // ───── LEFT ─────
+                List<int> bordersLeft = borders.BorderLeft;
+                if (bordersLeft != null)
+                {
+                    for (int i = 0; i < LeftBorder.Length; i++)
+                    {
+                        LeftBorder[i] = bordersLeft[i];
+                    }
+                }
+
+                // ───── RIGHT ─────
+                List<int> bordersRight = borders.BorderRight;
+                if (bordersRight != null)
+                {
+                    for (int i = 0; i < RightBorder.Length; i++)
+                    {
+                        RightBorder[i] = bordersRight[i];
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                EntropyHeap.Dispose();
+                EntropyIndices.Dispose();
+                Cells.Dispose();
+                PropagationStack.Dispose();
+                Output.Dispose();
+                UpBorder.Dispose();
+                DownBorder.Dispose();
+                LeftBorder.Dispose();
+                RightBorder.Dispose();
+            }
+        }
+
+        private int[,] GenerateMapInChunks(Vector2Int size, Vector2Int chunkSize)
         {
             SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
+
+            int cellCount = chunkSize.x * chunkSize.y;
 
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
@@ -274,7 +406,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Module set has no tiles.");
             }
 
-            // === Initialization of Readonly Lookup Structures (accessible in parallel) ===
+            // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
 
             // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
             NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> modules =
@@ -388,17 +520,200 @@ namespace MagusStudios.WaveFunctionCollapse
             // the algorithm constrains neighbor cells, it does each direction in a random order
             NativeArray<Direction> directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
 
-            for(int y = 0; y < heightInChunks; y+=2)
+            // === Create random generator ===
+            Random rng = new Unity.Mathematics.Random(seed);
+
+            // Generate the map in chunks:
+            // To take advantage of multiple worker threads (for large maps) while avoiding violating neighbor
+            // constraints along borders of neighboring chunks generating at the same time, the map is
+            // generated in 4 passes:
+            // 1. All chunks in odd columns, odd rows
+            // 2. All chunks in even columns, odd rows
+            // 3. All chunks in even columns, even rows
+            // 4. All chunks in odd columns, even rows
+            // Example (4x4, showing which chunks are generated in passes 1,2,3,4)
+            // 4 3 4 3
+            // 1 2 1 2
+            // 4 3 4 3
+            // 1 2 1 2
+            // In this example, 4 chunks can be generated a time. With a larger map, all worker threads could be used, 
+            // as the number of chunks that can be generated will far exceed the number of physical cores
+
+            // create a grid to hold the state for each chunk's run of wave function collapse
+            WfcState[,] stateGrid = new WfcState[size.x, size.y];
+            List<JobHandle> jobHandles = new List<JobHandle>();
+
+            // execute the 4 passes
+            for (int pass = 0; pass < 4; pass++)
             {
-                for (int x = 0; x < widthInChunks; x += 2)
+                // Binary-derived offsets
+                int startX = pass >> 1;
+                int startY = pass & 1;
+
+                // Double loop skipping every other cell
+                for (int y = startY; y < size.y; y += 2)
                 {
-                    
+                    for (int x = startX; x < size.x; x += 2)
+                    {
+                        WfcState wfcState = new WfcState(chunkSize, moduleDict.Count,
+                            GetBorders(stateGrid, x, y, size, chunkSize));
+                        stateGrid[x, y] = wfcState;
+
+                        // === Create and schedule the job ===
+                        WfcJob wfc = new WfcJob
+                        {
+                            Modules = modules,
+                            Weights = weights,
+                            Cells = wfcState.Cells,
+                            AllDirectionPermutations = directions,
+                            UpBorder = wfcState.UpBorder,
+                            DownBorder = wfcState.DownBorder,
+                            LeftBorder = wfcState.LeftBorder,
+                            RightBorder = wfcState.RightBorder,
+                            EntropyHeap = wfcState.EntropyHeap,
+                            EntropyIndices = wfcState.EntropyIndices,
+                            random = rng,
+                            PropagationStack = wfcState.PropagationStack,
+                            PropagationStackTop = 0,
+                            CellCount = cellCount,
+                            Width = chunkSize.x,
+                            Height = chunkSize.y,
+                            Output = wfcState.Output,
+                            Flag = WfcJob.State.OK
+                        };
+
+                        jobHandles.Add(wfc.Schedule());
+                    }
+                }
+
+                NativeArray<JobHandle> jobHandlesNative =
+                    new NativeArray<JobHandle>(AllDirectionOrders.Length, Allocator.Persistent);
+
+                jobHandlesNative = new NativeArray<JobHandle>(jobHandles.Count, Allocator.Persistent);
+                for (int i = 0; i < jobHandles.Count; i++)
+                {
+                    jobHandlesNative[i] = jobHandles[i];
+                }
+
+                JobHandle.CompleteAll(jobHandlesNative);
+                jobHandlesNative.Dispose();
+                jobHandles.Clear();
+            }
+
+            // prepare output
+            int finalWidth = size.x * chunkSize.x;
+            int finalHeight = size.y * chunkSize.y;
+
+            int[,] finalOutput = new int[finalWidth, finalHeight];
+
+            for (int chunkY = 0; chunkY < size.y; chunkY++)
+            {
+                for (int chunkX = 0; chunkX < size.x; chunkX++)
+                {
+                    WfcState state = stateGrid[chunkX, chunkY];
+                    NativeArray<int> chunk = state.Output;
+
+                    for (int localY = 0; localY < chunkSize.y; localY++)
+                    {
+                        for (int localX = 0; localX < chunkSize.x; localX++)
+                        {
+                            int chunkIndex = localX + localY * chunkSize.x;
+
+                            int worldX = chunkX * chunkSize.x + localX;
+                            int worldY = chunkY * chunkSize.y + localY;
+
+                            int unconverted = chunk[chunkIndex];
+                            finalOutput[worldX, worldY] = unconverted >= 0 ? moduleIndexToKey[unconverted] : -1;
+                        }
+                    }
+
+                    state.Dispose();
                 }
             }
+
+            return finalOutput;
         }
 
         /// <summary>
-        /// [Fast] Generates a map of tile IDs according to the WFC algorithm. Optimized with jobs and the burst compiler.
+        /// Helper method for generate map in chunks
+        /// </summary>
+        /// <param name="stateGrid"></param>
+        /// <param name="x"></param>
+        /// <param name="y"></param>
+        /// <param name="size"></param>
+        /// <param name="chunkSize"></param>
+        /// <returns></returns>
+        private Borders GetBorders(WfcState[,] stateGrid, int x, int y, Vector2Int size, Vector2Int chunkSize)
+        {
+            Borders borders = new Borders();
+            //left and right neighbor borders
+
+            // if has left neighbor
+            if (x - 1 >= 0)
+            {
+                // set left border to right border of left neighbor
+                WfcState state = stateGrid[x - 1, y];
+                if (state != null)
+                {
+                    borders.BorderLeft = new List<int>();
+                    for (int i = 1; i <= chunkSize.y; i++)
+                    {
+                        borders.BorderLeft.Add(state.Output[chunkSize.x * i - 1]);
+                    }
+                }
+            }
+
+            // if has right neighbor
+            if (x + 1 < size.x)
+            {
+                // set right border to left border of right neighbor
+                WfcState state = stateGrid[x + 1, y];
+                if (state != null)
+                {
+                    borders.BorderRight = new List<int>();
+                    for (int i = 0; i < chunkSize.y; i++)
+                    {
+                        borders.BorderRight.Add(state.Output[chunkSize.x * i]);
+                    }
+                }
+            }
+
+            // if has down neighbor
+            if (y - 1 >= 0)
+            {
+                // set bottom border to top border of bottom neighbor
+                WfcState state = stateGrid[x, y - 1];
+                int topRowStart = chunkSize.x * (chunkSize.y - 1);
+                if (state != null)
+                {
+                    borders.BorderDown = new List<int>();
+                    for (int i = 0; i < chunkSize.x; i++)
+                    {
+                        borders.BorderDown.Add(state.Output[topRowStart + i]);
+                    }
+                }
+            }
+
+            // if has up neighbor
+            if (y + 1 < size.y)
+            {
+                // set top border to bottom border of top neighbor
+                WfcState state = stateGrid[x, y + 1];
+                if (state != null)
+                {
+                    borders.BorderUp = new List<int>();
+                    for (int i = 0; i < chunkSize.x; i++)
+                    {
+                        borders.BorderUp.Add(state.Output[i]);
+                    }
+                }
+            }
+
+            return borders;
+        }
+
+        /// <summary>
+        /// [Fast] Generates a map of tile IDs according to the WFC algorithm.
         /// </summary>
         /// <param name="borders">Optional borders to enforce adjacency along the edges of this map, useful for creating
         /// larger maps in chunks. </param>
@@ -603,7 +918,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             // === Create random generator ===
-            var rng = new Unity.Mathematics.Random(seed);
+            Random rng = new Unity.Mathematics.Random(seed);
 
             // === Initialize Stack for Propagation Step
             NativeArray<int> propagationStack = new NativeArray<int>(cellCount, Allocator.Persistent);
@@ -638,10 +953,10 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // === Convert and cleanup ===
 
-          
+
             // Now that generation is complete, we use the mapping to convert the finished map back into the tile ids
             // used in the module set.
-     
+
             int[,] finalOutput = new int[width, height];
 
             for (int y = 0; y < height; y++)
@@ -649,7 +964,8 @@ namespace MagusStudios.WaveFunctionCollapse
                 int rowOffset = y * width;
                 for (int x = 0; x < width; x++)
                 {
-                    finalOutput[x, y] = moduleIndexToKey[output[rowOffset + x]];
+                    int unconverted = output[rowOffset + x];
+                    finalOutput[x, y] = unconverted >= 0 ? moduleIndexToKey[unconverted] : -1;
                 }
             }
 
@@ -872,6 +1188,11 @@ namespace MagusStudios.WaveFunctionCollapse
             for (int i = 0; i < UpBorder.Length; i++)
             {
                 int enforcerTile = UpBorder[i];
+                if (enforcerTile < 0)
+                {
+                    index++;
+                    continue;
+                }
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -882,6 +1203,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     enforcerDomain1 = (1UL << (enforcerTile - 64));
                 }
+
                 if (ConstrainCell(index, enforcerDomain0, enforcerDomain1, Direction.Down))
                     PushToPropagationStack(index);
 
@@ -893,6 +1215,11 @@ namespace MagusStudios.WaveFunctionCollapse
             for (int i = 0; i < DownBorder.Length; i++)
             {
                 int enforcerTile = DownBorder[i];
+                if (enforcerTile < 0)
+                {
+                    index++;
+                    continue;
+                }
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -915,6 +1242,11 @@ namespace MagusStudios.WaveFunctionCollapse
             for (int i = 0; i < LeftBorder.Length; i++)
             {
                 int enforcerTile = LeftBorder[i];
+                if (enforcerTile < 0)
+                {
+                    index++;
+                    continue;
+                }
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -936,7 +1268,12 @@ namespace MagusStudios.WaveFunctionCollapse
             index = Width - 1;
             for (int i = 0; i < RightBorder.Length; i++)
             {
-                int enforcerTile = LeftBorder[i];
+                int enforcerTile = RightBorder[i];
+                if (enforcerTile < 0)
+                {
+                    index++;
+                    continue;
+                }
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -954,6 +1291,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 index += Width;
             }
 
+            // propagate any constraints from borders that were pushed to the propagation stack
             Propagate();
 
             // Execute passes of the algorithm until complete
@@ -1093,6 +1431,7 @@ namespace MagusStudios.WaveFunctionCollapse
             EntropyIndices[cellId] = nativeHeapIndex;
         }
 
+        // Calculate entropy based on a cell's domain 
         private float GetEntropy(int cellId)
         {
             var cell = Cells[cellId];
@@ -1271,7 +1610,8 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <param name="enforcerDomain1">Mask representing the domain of tile ids (64-127) enforcing neighbor constraints.</param>
         /// <param name="direction">Direction from enforcer cell to the cell to constrain</param>
         /// <returns></returns>
-        private bool ConstrainCell(int cellToConstrain, ulong enforcerDomain0, ulong enforcerDomain1, Direction direction)
+        private bool ConstrainCell(int cellToConstrain, ulong enforcerDomain0, ulong enforcerDomain1,
+            Direction direction)
         {
             Cell cell = Cells[cellToConstrain];
 
