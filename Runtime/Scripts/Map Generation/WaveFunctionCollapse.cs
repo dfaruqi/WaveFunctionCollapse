@@ -142,9 +142,9 @@ namespace MagusStudios.WaveFunctionCollapse
             // {
             //     borders.BorderDown.Add(0);
             // }
-            
+
             //int[,] map = GenerateMap(borders);
-            int[,] map = GenerateMapInChunks(new Vector2Int(4, 4), new Vector2Int(32, 32));
+            int[,] map = GenerateMapInBlocks(new Vector2Int(4, 4), new Vector2Int(32, 32), 0);
 
             stopwatch.Stop();
 
@@ -254,7 +254,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             //once finished, load the whole map
-            //TileUtils.LoadMapData(tilemap, map, moduleSet.TileDatabase);
+            TileUtils.LoadMapData(tilemap, map, moduleSet.TileDatabase);
 
             yield break;
         }
@@ -385,11 +385,11 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private int[,] GenerateMapInChunks(Vector2Int size, Vector2Int chunkSize)
+        private int[,] GenerateMapInBlocks(Vector2Int size, Vector2Int blockSize, int defaultTileKey)
         {
             SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
 
-            int cellCount = chunkSize.x * chunkSize.y;
+            int cellCount = blockSize.x * blockSize.y;
 
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
@@ -404,6 +404,12 @@ namespace MagusStudios.WaveFunctionCollapse
             if (moduleDict.Count == 0)
             {
                 throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Module set has no tiles.");
+            }
+
+            // check that the default tile key is valid
+            if (!moduleDict.TryGetValue(defaultTileKey, out _))
+            {
+                throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Default tile key is invalid.");
             }
 
             // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
@@ -523,41 +529,66 @@ namespace MagusStudios.WaveFunctionCollapse
             // === Create random generator ===
             Random rng = new Unity.Mathematics.Random(seed);
 
-            // Generate the map in chunks:
+            // Generate the map in blocks:
             // To take advantage of multiple worker threads (for large maps) while avoiding violating neighbor
-            // constraints along borders of neighboring chunks generating at the same time, the map is
+            // constraints along borders of neighboring blocks generating at the same time, the map is
             // generated in 4 passes:
-            // 1. All chunks in odd columns, odd rows
-            // 2. All chunks in even columns, odd rows
-            // 3. All chunks in even columns, even rows
-            // 4. All chunks in odd columns, even rows
+            // 1. All blocks in odd columns, odd rows (1-indexed)
+            // 2. All blocks in odd columns, even rows (1-indexed)
+            // 3. All blocks in even columns, odd rows (1-indexed)
+            // 4. All blocks in even columns, even rows (1-indexed)
             // Example (4x4, showing which chunks are generated in passes 1,2,3,4)
-            // 4 3 4 3
-            // 1 2 1 2
-            // 4 3 4 3
-            // 1 2 1 2
-            // In this example, 4 chunks can be generated a time. With a larger map, all worker threads could be used, 
-            // as the number of chunks that can be generated will far exceed the number of physical cores
+            // 2 4 2 4
+            // 1 3 1 3
+            // 2 4 2 4
+            // 1 3 1 3
+            // In this example, 4 blocks can be generated at a time. The number of blocks that can be generated in
+            // parallel scales with the size of the map so that generation of large maps can take advantage
+            // of many worker threads.
+
+            // When generating blocks, we employ the modifying-in-blocks approach. The output is initiated to
+            // a trivial solution. This means filling the map completely with one default tile, like grass, for
+            // example. Then, when a block is generated, a wave function collapse job is scheduled that has a map
+            // size slightly bigger than the block size, typically +1 tile on every side (so 2 tiles larger). The
+            // tiles overlapping with other blocks are regenerated so that adjacent blocks can get enough neighbor
+            // information to not create errors at the borders. 
 
             // create a grid to hold the state for each chunk's run of wave function collapse
             WfcState[,] stateGrid = new WfcState[size.x, size.y];
+
+            // create a grid to hold the final output
+            int finalWidth = size.x * blockSize.x;
+            int finalHeight = size.y * blockSize.y;
+            int[,] finalOutput = new int[finalWidth, finalHeight];
+
+            int defaultTileIndex = moduleKeyToIndex[defaultTileKey];
+
+            for (int x = 0; x < finalOutput.GetLength(0); x++)
+            {
+                for (int y = 0; y < finalOutput.GetLength(1); y++)
+                {
+                    finalOutput[x, y] = defaultTileIndex;
+                }
+            }
+
             List<JobHandle> jobHandles = new List<JobHandle>();
 
             // execute the 4 passes
-            for (int pass = 0; pass < 4; pass++)
+            for (int pass = 0; pass < 1; pass++)
             {
                 // Binary-derived offsets
                 int startX = pass >> 1;
                 int startY = pass & 1;
 
-                // Double loop skipping every other cell
-                for (int y = startY; y < size.y; y += 2)
+                // Double loop skipping every other block
+                for (int blockY = startY; blockY < size.y; blockY += 2)
                 {
-                    for (int x = startX; x < size.x; x += 2)
+                    for (int blockX = startX; blockX < size.x; blockX += 2)
                     {
-                        WfcState wfcState = new WfcState(chunkSize, moduleDict.Count,
-                            GetBorders(stateGrid, x, y, size, chunkSize));
-                        stateGrid[x, y] = wfcState;
+                        Vector2Int trueBlockSize = blockSize + Vector2Int.one * 2;
+                        WfcState wfcState = new WfcState(trueBlockSize, moduleDict.Count,
+                            GetBorders(finalOutput, blockX, blockY, size, blockSize, defaultTileIndex));
+                        stateGrid[blockX, blockY] = wfcState;
 
                         // === Create and schedule the job ===
                         WfcJob wfc = new WfcJob
@@ -576,8 +607,8 @@ namespace MagusStudios.WaveFunctionCollapse
                             PropagationStack = wfcState.PropagationStack,
                             PropagationStackTop = 0,
                             CellCount = cellCount,
-                            Width = chunkSize.x,
-                            Height = chunkSize.y,
+                            Width = trueBlockSize.x,
+                            Height = trueBlockSize.y,
                             Output = wfcState.Output,
                             Flag = WfcJob.State.OK
                         };
@@ -586,6 +617,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     }
                 }
 
+                // Complete all jobs
                 NativeArray<JobHandle> jobHandlesNative =
                     new NativeArray<JobHandle>(AllDirectionOrders.Length, Allocator.Persistent);
 
@@ -596,38 +628,55 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 JobHandle.CompleteAll(jobHandlesNative);
+
+                // Clean up
                 jobHandlesNative.Dispose();
                 jobHandles.Clear();
-            }
 
-            // prepare output
-            int finalWidth = size.x * chunkSize.x;
-            int finalHeight = size.y * chunkSize.y;
-
-            int[,] finalOutput = new int[finalWidth, finalHeight];
-
-            for (int chunkY = 0; chunkY < size.y; chunkY++)
-            {
-                for (int chunkX = 0; chunkX < size.x; chunkX++)
+                // Add each block's output to the final output
+                for (int blockY = startY; blockY < size.y; blockY += 2)
                 {
-                    WfcState state = stateGrid[chunkX, chunkY];
-                    NativeArray<int> chunk = state.Output;
-
-                    for (int localY = 0; localY < chunkSize.y; localY++)
+                    for (int blockX = startX; blockX < size.x; blockX += 2)
                     {
-                        for (int localX = 0; localX < chunkSize.x; localX++)
+                        WfcState wfcState = stateGrid[blockX, blockY];
+
+                        int worldStartX = blockX * blockSize.x - 1;
+                        int worldStartY = blockY * blockSize.y - 1;
+
+                        int worldEndX = worldStartX + blockSize.x + 1;
+                        int worldEndY = worldStartY + blockSize.y + 1;
+
+                        int worldHeight = size.y * blockSize.y;
+                        int worldWidth = size.x * blockSize.x;
+
+                        int outputIndex = 0;
+
+                        for (int y = worldStartY; y < worldEndY; y++)
                         {
-                            int chunkIndex = localX + localY * chunkSize.x;
+                            for (int x = worldStartX; x < worldEndX; x++)
+                            {
+                                if (y < 0 || y >= worldHeight)
+                                {
+                                    outputIndex++;
+                                    continue;
+                                }
 
-                            int worldX = chunkX * chunkSize.x + localX;
-                            int worldY = chunkY * chunkSize.y + localY;
+                                if (x < 0 || x >= worldWidth)
+                                {
+                                    outputIndex++;
+                                    continue;
+                                }
 
-                            int unconverted = chunk[chunkIndex];
-                            finalOutput[worldX, worldY] = unconverted >= 0 ? moduleIndexToKey[unconverted] : -1;
+                                finalOutput[x, y] = moduleIndexToKey[wfcState.Output[outputIndex]];
+
+                                outputIndex++;
+                            }
+
+                            outputIndex++;
                         }
-                    }
 
-                    state.Dispose();
+                        wfcState.Dispose();
+                    }
                 }
             }
 
@@ -635,82 +684,118 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         /// <summary>
-        /// Helper method for generate map in chunks
+        /// Helper method for generate map in blocks
         /// </summary>
         /// <param name="stateGrid"></param>
         /// <param name="x"></param>
         /// <param name="y"></param>
         /// <param name="size"></param>
-        /// <param name="chunkSize"></param>
+        /// <param name="blockSize"></param>
         /// <returns></returns>
-        private Borders GetBorders(WfcState[,] stateGrid, int x, int y, Vector2Int size, Vector2Int chunkSize)
+        private Borders GetBorders(
+            int[,] output,
+            int x,
+            int y,
+            Vector2Int size,
+            Vector2Int blockSize,
+            int defaultTileId)
         {
             Borders borders = new Borders();
-            //left and right neighbor borders
 
-            // if has left neighbor
-            if (x - 1 >= 0)
+            int blockStartX = x * blockSize.x;
+            int blockStartY = y * blockSize.y;
+
+            int blockEndX = blockStartX + blockSize.x - 1;
+            int blockEndY = blockStartY + blockSize.y - 1;
+
+            // ========= LEFT =========
+            if (x > 0)
             {
-                // set left border to right border of left neighbor
-                WfcState state = stateGrid[x - 1, y];
-                if (state != null)
+                int borderX = blockStartX - 2;
+                borders.BorderLeft = new List<int>();
+
+                for (int yTile = blockStartY - 1; yTile <= blockEndY + 1; yTile++)
                 {
-                    borders.BorderLeft = new List<int>();
-                    for (int i = 1; i <= chunkSize.y; i++)
-                    {
-                        borders.BorderLeft.Add(state.Output[chunkSize.x * i - 1]);
-                    }
+                    if (IsInBounds(borderX, yTile, output))
+                        borders.BorderLeft.Add(output[borderX, yTile]);
+                    else
+                        borders.BorderLeft.Add(defaultTileId);
                 }
             }
-
-            // if has right neighbor
-            if (x + 1 < size.x)
+            else
             {
-                // set right border to left border of right neighbor
-                WfcState state = stateGrid[x + 1, y];
-                if (state != null)
-                {
-                    borders.BorderRight = new List<int>();
-                    for (int i = 0; i < chunkSize.y; i++)
-                    {
-                        borders.BorderRight.Add(state.Output[chunkSize.x * i]);
-                    }
-                }
+                borders.BorderLeft = Enumerable.Repeat(defaultTileId, blockSize.y + 2).ToList();
             }
 
-            // if has down neighbor
-            if (y - 1 >= 0)
+            // ========= RIGHT =========
+            if (x < size.x - 1)
             {
-                // set bottom border to top border of bottom neighbor
-                WfcState state = stateGrid[x, y - 1];
-                int topRowStart = chunkSize.x * (chunkSize.y - 1);
-                if (state != null)
+                int borderX = blockEndX + 2;
+                borders.BorderRight = new List<int>();
+
+                for (int yTile = blockStartY - 1; yTile <= blockEndY + 1; yTile++)
                 {
-                    borders.BorderDown = new List<int>();
-                    for (int i = 0; i < chunkSize.x; i++)
-                    {
-                        borders.BorderDown.Add(state.Output[topRowStart + i]);
-                    }
+                    if (IsInBounds(borderX, yTile, output))
+                        borders.BorderRight.Add(output[borderX, yTile]);
+                    else
+                        borders.BorderRight.Add(defaultTileId);
                 }
             }
-
-            // if has up neighbor
-            if (y + 1 < size.y)
+            else
             {
-                // set top border to bottom border of top neighbor
-                WfcState state = stateGrid[x, y + 1];
-                if (state != null)
+                borders.BorderRight = Enumerable.Repeat(defaultTileId, blockSize.y + 2).ToList();
+            }
+
+            // ========= DOWN =========
+            if (y > 0)
+            {
+                int borderY = blockStartY - 2;
+                borders.BorderDown = new List<int>();
+
+                for (int xTile = blockStartX - 1; xTile <= blockEndX + 1; xTile++)
                 {
-                    borders.BorderUp = new List<int>();
-                    for (int i = 0; i < chunkSize.x; i++)
-                    {
-                        borders.BorderUp.Add(state.Output[i]);
-                    }
+                    if (IsInBounds(xTile, borderY, output))
+                        borders.BorderDown.Add(output[xTile, borderY]);
+                    else
+                        borders.BorderDown.Add(defaultTileId);
                 }
+            }
+            else
+            {
+                borders.BorderDown = Enumerable.Repeat(defaultTileId, blockSize.x + 2).ToList();
+            }
+
+            // ========= UP =========
+            if (y < size.y - 1)
+            {
+                int borderY = blockEndY + 2;
+                borders.BorderUp = new List<int>();
+
+                for (int xTile = blockStartX - 1; xTile <= blockEndX + 1; xTile++)
+                {
+                    if (IsInBounds(xTile, borderY, output))
+                        borders.BorderUp.Add(output[xTile, borderY]);
+                    else
+                        borders.BorderUp.Add(defaultTileId);
+                }
+            }
+            else
+            {
+                borders.BorderUp = Enumerable.Repeat(defaultTileId, blockSize.x + 2).ToList();
             }
 
             return borders;
         }
+
+
+        private bool IsInBounds(int x, int y, int[,] grid)
+        {
+            return x >= 0 &&
+                   y >= 0 &&
+                   x < grid.GetLength(0) &&
+                   y < grid.GetLength(1);
+        }
+
 
         /// <summary>
         /// [Fast] Generates a map of tile IDs according to the WFC algorithm.
@@ -1193,6 +1278,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     index++;
                     continue;
                 }
+
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -1220,6 +1306,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     index++;
                     continue;
                 }
+
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -1247,6 +1334,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     index++;
                     continue;
                 }
+
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
@@ -1274,6 +1362,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     index++;
                     continue;
                 }
+
                 ulong enforcerDomain0 = 0;
                 ulong enforcerDomain1 = 0;
                 if (enforcerTile < 64)
