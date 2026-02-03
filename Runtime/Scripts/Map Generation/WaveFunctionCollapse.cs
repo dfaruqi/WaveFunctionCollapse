@@ -3,11 +3,10 @@ using MagusStudios.Arcanist.Utils;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using Random = Unity.Mathematics.Random;
@@ -140,25 +139,9 @@ namespace MagusStudios.WaveFunctionCollapse
             //start a stopwatch for efficiency analysis
             System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
             stopwatch.Start();
-
-            // Borders borders = new Borders();
-            // borders.BorderUp = new List<int>(64);
-            // borders.BorderDown = new List<int>(64);
-            // borders.BorderLeft = new List<int>(32);
-            // borders.BorderRight = new List<int>(32);
-            // for (int i = 0; i < 64; i++)
-            // {
-            //     borders.BorderUp.Add(0);
-            //     borders.BorderDown.Add(0);
-            // }
-            // for (int i = 0; i < 32; i++)
-            // {
-            //     borders.BorderLeft.Add(0);
-            //     borders.BorderRight.Add(0);
-            // }
-            //
+            
             // int[,] map = GenerateMap(borders);
-            int[,] map = GenerateMapInBlocksTest(new Vector2Int(4, 4), new Vector2Int(34, 34), 0);
+            int[,] map = GenerateMapInBlocks(new Vector2Int(16, 16), new Vector2Int(64, 64), 0);
 
             stopwatch.Stop();
 
@@ -531,15 +514,15 @@ namespace MagusStudios.WaveFunctionCollapse
                 directions.Dispose();
             }
         }
-        
-        private int[,] GenerateMapInBlocksTest(Vector2Int size, Vector2Int blockSize, int defaultTileKey)
+
+        private int[,] GenerateMapInBlocks(Vector2Int size, Vector2Int blockSize, int defaultTileKey)
         {
             // create algorithm lookup data and state
             WfcGlobals wfcGlobals = new WfcGlobals(moduleSet);
             WfcState[,] stateGrid = new WfcState[size.x, size.y];
 
             //create rng
-            Random rng = new Unity.Mathematics.Random(seed);
+            Random blockSeedGenerator = new Unity.Mathematics.Random(seed);
 
             // sizing
             int blockWidth = blockSize.x;
@@ -548,8 +531,6 @@ namespace MagusStudios.WaveFunctionCollapse
             int totalMapWidth = blockWidth * size.x;
             int totalMapHeight = blockHeight * size.y;
 
-            int[,] finalOutput = new int[totalMapWidth, totalMapHeight];
-            
             // Generate the map in blocks:
             // To take advantage of multiple worker threads (for large maps) while avoiding violating neighbor
             // constraints along borders of neighboring blocks generating at the same time, the map is
@@ -558,23 +539,28 @@ namespace MagusStudios.WaveFunctionCollapse
             // 2. All blocks in odd columns, even rows (1-indexed)
             // 3. All blocks in even columns, odd rows (1-indexed)
             // 4. All blocks in even columns, even rows (1-indexed)
+            //
             // Example (4x4, showing which chunks are generated in passes 1,2,3,4)
             // 2 4 2 4
             // 1 3 1 3
             // 2 4 2 4
             // 1 3 1 3
+            //
             // In this example, 4 blocks can be generated at a time. The number of blocks that can be generated in
             // parallel scales with the size of the map so that generation of large maps can take advantage
             // of many worker threads.
-
+            //
             // When generating blocks, we employ the modifying-in-blocks approach. The output is initiated to
             // a trivial solution. This means filling the map completely with one default tile, like grass, for
             // example. Then, when a block is generated, a wave function collapse job is scheduled that has a map
-            // size slightly bigger than the block size, typically +1 tile on every side (so 2 tiles larger). The
-            // tiles overlapping with other blocks are regenerated so that adjacent blocks can get enough neighbor
-            // information to not create errors at the borders. 
-            
-            for (int pass = 0; pass < 1; pass++)
+            // size slightly bigger than the block size, typically +1 tile on every side (so 2 tiles larger overall
+            // in each dimension). The tiles that overlap other blocks are regenerated so adjacent blocks
+            // can get enough constraint information from neighboring blocks, thus preventing errors at borders
+            // or corners. 
+
+            int[,] output = new int[totalMapWidth, totalMapHeight];
+
+            for (int pass = 0; pass < 4; pass++)
             {
                 // Binary-derived offsets
                 int passStartBlockX = pass >> 1;
@@ -585,10 +571,16 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
-                        WfcState wfcState = new WfcState(new Vector2Int(blockSize.x, blockSize.y),
-                            moduleSet.Modules.Count);
+                        WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
+                            moduleSet.Modules.Count,
+                            GetBorders(output, blockX, blockY, size, blockSize, defaultTileKey));
+
+                        // WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
+                        //     moduleSet.Modules.Count);
                         stateGrid[blockX, blockY] = wfcState;
 
+                        Random rng = new Random(blockSeedGenerator.NextUInt());
+                        
                         // === Create and schedule the job ===
                         WfcJob wfc = new WfcJob
                         {
@@ -605,8 +597,8 @@ namespace MagusStudios.WaveFunctionCollapse
                             random = rng,
                             PropagationStack = wfcState.PropagationStack,
                             PropagationStackTop = 0,
-                            Width = blockSize.x,
-                            Height = blockSize.y,
+                            Width = blockSize.x + 2,
+                            Height = blockSize.y + 2,
                             Output = wfcState.Output,
                             Flag = WfcJob.State.OK
                         };
@@ -630,21 +622,33 @@ namespace MagusStudios.WaveFunctionCollapse
                 jobHandlesNative.Dispose();
                 jobHandles.Clear();
 
+                int trueBlockWidth = blockWidth + 2;
+                int trueBlockHeight = blockHeight + 2;
                 for (int blockY = passStartBlockY; blockY < size.y; blockY += 2)
                 {
                     for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
-                        int startX = blockX * blockSize.x;
-                        int startY = blockY * blockSize.y;
-                        
+                        int startX = blockX * blockSize.x - 1;
+                        int startY = blockY * blockSize.y - 1;
+
                         WfcState wfcState = stateGrid[blockX, blockY];
-                        
-                        for (int i = 0; i < blockWidth * blockHeight; i++)
+
+                        for (int i = 0; i < (trueBlockWidth) * (trueBlockHeight); i++)
                         {
-                            int y = i / blockWidth;
-                            int x = i % blockWidth;
-                            
-                            finalOutput[x + startX, y + startY] = wfcGlobals.moduleIndexToKey[wfcState.Output[i]];
+                            int y = i / trueBlockWidth;
+                            int x = i % trueBlockWidth;
+
+                            int worldX = x + startX;
+                            int worldY = y + startY;
+                            if (worldX < 0 || worldY < 0 || worldX >= totalMapWidth || worldY >= totalMapHeight)
+                            {
+                                continue;
+                            }
+
+                            int unconverted = wfcState.Output[i];
+
+                            output[x + startX, y + startY] =
+                                unconverted > -1 ? wfcState.Output[i] : defaultTileKey;
                         }
 
                         wfcState.Dispose();
@@ -654,7 +658,17 @@ namespace MagusStudios.WaveFunctionCollapse
 
             wfcGlobals.Dispose();
 
-            return finalOutput;
+            // convert output back to keys
+
+            for (int j = 0; j < output.GetLength(1); j++)
+            {
+                for (int i = 0; i < output.GetLength(0); i++)
+                { 
+                    output[i, j] = wfcGlobals.moduleIndexToKey[output[i, j]];
+                }
+            }
+
+            return output;
         }
 
         private Borders GetBorders(
@@ -1052,6 +1066,7 @@ namespace MagusStudios.WaveFunctionCollapse
     /// <summary>
     /// A burst-compilable, preallocated, fast implementation of Wave Function Collapse.
     /// </summary>
+    [BurstCompile]
     struct WfcJob : IJob
     {
         // Lookup structures - immutable, for reference only, and accessible in parallel
