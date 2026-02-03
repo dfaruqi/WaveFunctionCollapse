@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using Random = Unity.Mathematics.Random;
@@ -122,6 +123,10 @@ namespace MagusStudios.WaveFunctionCollapse
         // called from button in editor script (see WaveFunctionCollapseEditor)
         public void Generate()
         {
+            if (!Application.IsPlaying(this)) return; // don't generate when not playing
+            // (it would overwrite the tilemap in your scene in edit mode, which is
+            // not desirable if using it to create module sets)
+
             StopAllCoroutines();
 
             GetFirstTilemapInScene(); // update the tilemap
@@ -137,14 +142,23 @@ namespace MagusStudios.WaveFunctionCollapse
             stopwatch.Start();
 
             // Borders borders = new Borders();
+            // borders.BorderUp = new List<int>(64);
             // borders.BorderDown = new List<int>(64);
+            // borders.BorderLeft = new List<int>(32);
+            // borders.BorderRight = new List<int>(32);
             // for (int i = 0; i < 64; i++)
             // {
+            //     borders.BorderUp.Add(0);
             //     borders.BorderDown.Add(0);
             // }
-
-            //int[,] map = GenerateMap(borders);
-            int[,] map = GenerateMapInBlocks(new Vector2Int(4, 4), new Vector2Int(32, 32), 0);
+            // for (int i = 0; i < 32; i++)
+            // {
+            //     borders.BorderLeft.Add(0);
+            //     borders.BorderRight.Add(0);
+            // }
+            //
+            // int[,] map = GenerateMap(borders);
+            int[,] map = GenerateMapInBlocksTest(new Vector2Int(4, 4), new Vector2Int(34, 34), 0);
 
             stopwatch.Stop();
 
@@ -339,7 +353,6 @@ namespace MagusStudios.WaveFunctionCollapse
                     }
                 }
 
-
                 // ───── DOWN ─────
                 List<int> bordersDown = borders.BorderDown;
                 if (bordersDown != null)
@@ -385,150 +398,158 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private int[,] GenerateMapInBlocks(Vector2Int size, Vector2Int blockSize, int defaultTileKey)
+        private class WfcGlobals
         {
-            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
+            public NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> Modules;
+            public NativeParallelHashMap<int, float> Weights;
+            public Dictionary<int, int> moduleKeyToIndex;
+            public Dictionary<int, int> moduleIndexToKey;
+            public NativeArray<Direction> directions;
 
-            int cellCount = blockSize.x * blockSize.y;
-
-            // First, check that the module set does not have too many tiles
-            if (moduleDict.Count >= MAXIMUM_TILES)
+            public WfcGlobals(WfcModuleSet moduleSet)
             {
-                Debug.LogError(
-                    $"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
-                throw new System.Exception(
-                    $"[{nameof(WaveFunctionCollapse)}] Module set has too many tiles. WFC only supports up to {MAXIMUM_TILES} tiles.");
-            }
+                SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
 
-            // check for 0 tiles
-            if (moduleDict.Count == 0)
-            {
-                throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Module set has no tiles.");
-            }
+                // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
 
-            // check that the default tile key is valid
-            if (!moduleDict.TryGetValue(defaultTileKey, out _))
-            {
-                throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Default tile key is invalid.");
-            }
+                // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
+                Modules = new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count,
+                    Allocator.Persistent);
 
-            // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
+                // weights
+                Weights = new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
 
-            // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
-            NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> modules =
-                new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count, Allocator.Persistent);
+                // - initialize modules and weights -
 
-            // weights
-            NativeParallelHashMap<int, float> weights =
-                new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
+                // The module set is a dictionary for more flexibility in the editor. Native data does not support dictionaries, however, so we create an
+                // ordered array of all modules instead. The indices of this array will be used as the tile ids in the algorithm. We create a mapping
+                // of tile id (in the module set) -> index in the ordered array so that the output can be converted back to the module set's editor ids
+                // after generation returns the map
 
-            // - initialize modules and weights -
-
-            // The module set is a dictionary for more flexibility in the editor. Native data does not support dictionaries, however, so we create an
-            // ordered array of all modules instead. The indices of this array will be used as the tile ids in the algorithm. We create a mapping
-            // of tile id (in the module set) -> index in the ordered array so that the output can be converted back to the module set's editor ids
-            // after generation returns the map
-
-            // First, create the mapping
-            Dictionary<int, int> moduleKeyToIndex = new Dictionary<int, int>();
-            Dictionary<int, int> moduleIndexToKey = new Dictionary<int, int>();
-            int mappingCount = 0;
-            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
-            {
-                moduleKeyToIndex[kvp.Key] = mappingCount;
-                moduleIndexToKey[mappingCount] = kvp.Key;
-                mappingCount++;
-            }
-
-            // Fill modules and weights
-            int moduleCount = 0;
-            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
-            {
-                WfcModuleSet.TileModule module = kvp.Value;
-                WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
-
-                // initialize the module's allowed neighbors to nothing at first
-                nativeModule.allowedUp0 = 0;
-                nativeModule.allowedUp1 = 0;
-                nativeModule.allowedDown0 = 0;
-                nativeModule.allowedDown1 = 0;
-                nativeModule.allowedLeft0 = 0;
-                nativeModule.allowedLeft1 = 0;
-                nativeModule.allowedRight0 = 0;
-                nativeModule.allowedRight1 = 0;
-
-                // UP
-                foreach (int v in module.compatibleNeighbors[Direction.Up])
+                // First, create the mapping
+                moduleKeyToIndex = new Dictionary<int, int>();
+                moduleIndexToKey = new Dictionary<int, int>();
+                int mappingCount = 0;
+                foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
                 {
-                    int compatibleNeighborIndex = moduleKeyToIndex[v];
-
-                    if (compatibleNeighborIndex < 64)
-                    {
-                        nativeModule.allowedUp0 |= 1UL << compatibleNeighborIndex;
-                    }
-                    else
-                    {
-                        nativeModule.allowedUp1 |= 1UL << (compatibleNeighborIndex - 64);
-                    }
+                    moduleKeyToIndex[kvp.Key] = mappingCount;
+                    moduleIndexToKey[mappingCount] = kvp.Key;
+                    mappingCount++;
                 }
 
-                // DOWN
-                foreach (int v in module.compatibleNeighbors[Direction.Down])
+                // Fill modules and weights
+                int moduleCount = 0;
+                foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
                 {
-                    int compatibleNeighborIndex = moduleKeyToIndex[v];
+                    WfcModuleSet.TileModule module = kvp.Value;
+                    WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
-                    if (compatibleNeighborIndex < 64)
+                    // initialize the module's allowed neighbors to nothing at first
+                    nativeModule.allowedUp0 = 0;
+                    nativeModule.allowedUp1 = 0;
+                    nativeModule.allowedDown0 = 0;
+                    nativeModule.allowedDown1 = 0;
+                    nativeModule.allowedLeft0 = 0;
+                    nativeModule.allowedLeft1 = 0;
+                    nativeModule.allowedRight0 = 0;
+                    nativeModule.allowedRight1 = 0;
+
+                    // UP
+                    foreach (int v in module.compatibleNeighbors[Direction.Up])
                     {
-                        nativeModule.allowedDown0 |= 1UL << compatibleNeighborIndex;
+                        int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                        if (compatibleNeighborIndex < 64)
+                        {
+                            nativeModule.allowedUp0 |= 1UL << compatibleNeighborIndex;
+                        }
+                        else
+                        {
+                            nativeModule.allowedUp1 |= 1UL << (compatibleNeighborIndex - 64);
+                        }
                     }
-                    else
+
+                    // DOWN
+                    foreach (int v in module.compatibleNeighbors[Direction.Down])
                     {
-                        nativeModule.allowedDown1 |= 1UL << (compatibleNeighborIndex - 64);
+                        int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                        if (compatibleNeighborIndex < 64)
+                        {
+                            nativeModule.allowedDown0 |= 1UL << compatibleNeighborIndex;
+                        }
+                        else
+                        {
+                            nativeModule.allowedDown1 |= 1UL << (compatibleNeighborIndex - 64);
+                        }
                     }
+
+                    // LEFT
+                    foreach (int v in module.compatibleNeighbors[Direction.Left])
+                    {
+                        int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                        if (compatibleNeighborIndex < 64)
+                        {
+                            nativeModule.allowedLeft0 |= 1UL << compatibleNeighborIndex;
+                        }
+                        else
+                        {
+                            nativeModule.allowedLeft1 |= 1UL << (compatibleNeighborIndex - 64);
+                        }
+                    }
+
+                    // RIGHT
+                    foreach (int v in module.compatibleNeighbors[Direction.Right])
+                    {
+                        int compatibleNeighborIndex = moduleKeyToIndex[v];
+
+                        if (compatibleNeighborIndex < 64)
+                        {
+                            nativeModule.allowedRight0 |= 1UL << compatibleNeighborIndex;
+                        }
+                        else
+                        {
+                            nativeModule.allowedRight1 |= 1UL << (compatibleNeighborIndex - 64);
+                        }
+                    }
+
+                    Weights.Add(moduleCount, module.weight);
+                    Modules.Add(moduleCount, nativeModule);
+                    moduleCount++;
                 }
 
-                // LEFT
-                foreach (int v in module.compatibleNeighbors[Direction.Left])
-                {
-                    int compatibleNeighborIndex = moduleKeyToIndex[v];
-
-                    if (compatibleNeighborIndex < 64)
-                    {
-                        nativeModule.allowedLeft0 |= 1UL << compatibleNeighborIndex;
-                    }
-                    else
-                    {
-                        nativeModule.allowedLeft1 |= 1UL << (compatibleNeighborIndex - 64);
-                    }
-                }
-
-                // RIGHT
-                foreach (int v in module.compatibleNeighbors[Direction.Right])
-                {
-                    int compatibleNeighborIndex = moduleKeyToIndex[v];
-
-                    if (compatibleNeighborIndex < 64)
-                    {
-                        nativeModule.allowedRight0 |= 1UL << compatibleNeighborIndex;
-                    }
-                    else
-                    {
-                        nativeModule.allowedRight1 |= 1UL << (compatibleNeighborIndex - 64);
-                    }
-                }
-
-                weights.Add(moduleCount, module.weight);
-                modules.Add(moduleCount, nativeModule);
-                moduleCount++;
+                // A flattened area of all permutations of four directions, precomputed and for use in generation for when
+                // the algorithm constrains neighbor cells, it does each direction in a random order
+                directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
             }
 
-            // A flattened area of all permutations of four directions, precomputed and for use in generation for when
-            // the algorithm constrains neighbor cells, it does each direction in a random order
-            NativeArray<Direction> directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
+            public void Dispose()
+            {
+                Modules.Dispose();
+                Weights.Dispose();
+                directions.Dispose();
+            }
+        }
+        
+        private int[,] GenerateMapInBlocksTest(Vector2Int size, Vector2Int blockSize, int defaultTileKey)
+        {
+            // create algorithm lookup data and state
+            WfcGlobals wfcGlobals = new WfcGlobals(moduleSet);
+            WfcState[,] stateGrid = new WfcState[size.x, size.y];
 
-            // === Create random generator ===
+            //create rng
             Random rng = new Unity.Mathematics.Random(seed);
 
+            // sizing
+            int blockWidth = blockSize.x;
+            int blockHeight = blockSize.y;
+
+            int totalMapWidth = blockWidth * size.x;
+            int totalMapHeight = blockHeight * size.y;
+
+            int[,] finalOutput = new int[totalMapWidth, totalMapHeight];
+            
             // Generate the map in blocks:
             // To take advantage of multiple worker threads (for large maps) while avoiding violating neighbor
             // constraints along borders of neighboring blocks generating at the same time, the map is
@@ -552,51 +573,29 @@ namespace MagusStudios.WaveFunctionCollapse
             // size slightly bigger than the block size, typically +1 tile on every side (so 2 tiles larger). The
             // tiles overlapping with other blocks are regenerated so that adjacent blocks can get enough neighbor
             // information to not create errors at the borders. 
-
-            // create a grid to hold the state for each chunk's run of wave function collapse
-            WfcState[,] stateGrid = new WfcState[size.x, size.y];
-
-            // create a grid to hold the final output
-            int finalWidth = size.x * blockSize.x;
-            int finalHeight = size.y * blockSize.y;
-            int[,] finalOutput = new int[finalWidth, finalHeight];
-
-            int defaultTileIndex = moduleKeyToIndex[defaultTileKey];
-
-            for (int x = 0; x < finalOutput.GetLength(0); x++)
-            {
-                for (int y = 0; y < finalOutput.GetLength(1); y++)
-                {
-                    finalOutput[x, y] = defaultTileIndex;
-                }
-            }
-
-            List<JobHandle> jobHandles = new List<JobHandle>();
-
-            // execute the 4 passes
+            
             for (int pass = 0; pass < 1; pass++)
             {
                 // Binary-derived offsets
-                int startX = pass >> 1;
-                int startY = pass & 1;
+                int passStartBlockX = pass >> 1;
+                int passStartBlockY = pass & 1;
 
-                // Double loop skipping every other block
-                for (int blockY = startY; blockY < size.y; blockY += 2)
+                List<JobHandle> jobHandles = new List<JobHandle>();
+                for (int blockY = passStartBlockY; blockY < size.y; blockY += 2)
                 {
-                    for (int blockX = startX; blockX < size.x; blockX += 2)
+                    for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
-                        Vector2Int trueBlockSize = blockSize + Vector2Int.one * 2;
-                        WfcState wfcState = new WfcState(trueBlockSize, moduleDict.Count,
-                            GetBorders(finalOutput, blockX, blockY, size, blockSize, defaultTileIndex));
+                        WfcState wfcState = new WfcState(new Vector2Int(blockSize.x, blockSize.y),
+                            moduleSet.Modules.Count);
                         stateGrid[blockX, blockY] = wfcState;
 
                         // === Create and schedule the job ===
                         WfcJob wfc = new WfcJob
                         {
-                            Modules = modules,
-                            Weights = weights,
+                            Modules = wfcGlobals.Modules,
+                            Weights = wfcGlobals.Weights,
                             Cells = wfcState.Cells,
-                            AllDirectionPermutations = directions,
+                            AllDirectionPermutations = wfcGlobals.directions,
                             UpBorder = wfcState.UpBorder,
                             DownBorder = wfcState.DownBorder,
                             LeftBorder = wfcState.LeftBorder,
@@ -606,9 +605,8 @@ namespace MagusStudios.WaveFunctionCollapse
                             random = rng,
                             PropagationStack = wfcState.PropagationStack,
                             PropagationStackTop = 0,
-                            CellCount = cellCount,
-                            Width = trueBlockSize.x,
-                            Height = trueBlockSize.y,
+                            Width = blockSize.x,
+                            Height = blockSize.y,
                             Output = wfcState.Output,
                             Flag = WfcJob.State.OK
                         };
@@ -629,50 +627,24 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 JobHandle.CompleteAll(jobHandlesNative);
 
-                // Clean up
                 jobHandlesNative.Dispose();
                 jobHandles.Clear();
 
-                // Add each block's output to the final output
-                for (int blockY = startY; blockY < size.y; blockY += 2)
+                for (int blockY = passStartBlockY; blockY < size.y; blockY += 2)
                 {
-                    for (int blockX = startX; blockX < size.x; blockX += 2)
+                    for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
+                        int startX = blockX * blockSize.x;
+                        int startY = blockY * blockSize.y;
+                        
                         WfcState wfcState = stateGrid[blockX, blockY];
-
-                        int worldStartX = blockX * blockSize.x - 1;
-                        int worldStartY = blockY * blockSize.y - 1;
-
-                        int worldEndX = worldStartX + blockSize.x + 1;
-                        int worldEndY = worldStartY + blockSize.y + 1;
-
-                        int worldHeight = size.y * blockSize.y;
-                        int worldWidth = size.x * blockSize.x;
-
-                        int outputIndex = 0;
-
-                        for (int y = worldStartY; y < worldEndY; y++)
+                        
+                        for (int i = 0; i < blockWidth * blockHeight; i++)
                         {
-                            for (int x = worldStartX; x < worldEndX; x++)
-                            {
-                                if (y < 0 || y >= worldHeight)
-                                {
-                                    outputIndex++;
-                                    continue;
-                                }
-
-                                if (x < 0 || x >= worldWidth)
-                                {
-                                    outputIndex++;
-                                    continue;
-                                }
-
-                                finalOutput[x, y] = moduleIndexToKey[wfcState.Output[outputIndex]];
-
-                                outputIndex++;
-                            }
-
-                            outputIndex++;
+                            int y = i / blockWidth;
+                            int x = i % blockWidth;
+                            
+                            finalOutput[x + startX, y + startY] = wfcGlobals.moduleIndexToKey[wfcState.Output[i]];
                         }
 
                         wfcState.Dispose();
@@ -680,18 +652,11 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
             }
 
+            wfcGlobals.Dispose();
+
             return finalOutput;
         }
 
-        /// <summary>
-        /// Helper method for generate map in blocks
-        /// </summary>
-        /// <param name="stateGrid"></param>
-        /// <param name="x"></param>
-        /// <param name="y"></param>
-        /// <param name="size"></param>
-        /// <param name="blockSize"></param>
-        /// <returns></returns>
         private Borders GetBorders(
             int[,] output,
             int x,
@@ -831,7 +796,8 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
             NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> modules =
-                new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count, Allocator.Persistent);
+                new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count,
+                    Allocator.Persistent);
 
             // weights
             NativeParallelHashMap<int, float> weights =
@@ -939,7 +905,8 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // A flattened area of all permutations of four directions, precomputed and for use in generation for when
             // the algorithm constrains neighbor cells, it does each direction in a random order
-            NativeArray<Direction> directions = new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
+            NativeArray<Direction> directions =
+                new NativeArray<Direction>(AllDirectionOrders, Allocator.Persistent);
 
             // === Initialization of Algorithm State ===
 
@@ -966,7 +933,8 @@ namespace MagusStudios.WaveFunctionCollapse
             int bordersRightCount = borders.BorderRight?.Count ?? 0;
             int bordersLeftCount = borders.BorderLeft?.Count ?? 0;
 
-            NativeArray<int> upBorder = new NativeArray<int>(Mathf.Min(width, bordersUpCount), Allocator.Persistent);
+            NativeArray<int> upBorder =
+                new NativeArray<int>(Mathf.Min(width, bordersUpCount), Allocator.Persistent);
             NativeArray<int> downBorder =
                 new NativeArray<int>(Mathf.Min(width, bordersDownCount), Allocator.Persistent);
             NativeArray<int> leftBorder =
@@ -1027,7 +995,6 @@ namespace MagusStudios.WaveFunctionCollapse
                 random = rng,
                 PropagationStack = propagationStack,
                 PropagationStackTop = 0,
-                CellCount = cellCount,
                 Width = width,
                 Height = height,
                 Output = output,
@@ -1118,7 +1085,6 @@ namespace MagusStudios.WaveFunctionCollapse
         public NativeArray<NativeHeapIndex> EntropyIndices;
 
         // map size and cell count
-        public int CellCount;
         public int Width;
         public int Height;
 
@@ -1391,7 +1357,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             // Prepare output
-            for (int i = 0; i < CellCount; i++)
+            for (int i = 0; i < Width * Height; i++)
             {
                 Output[i] = Cells[i].selected;
             }
