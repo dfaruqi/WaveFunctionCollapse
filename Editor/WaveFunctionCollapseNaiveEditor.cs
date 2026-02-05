@@ -71,7 +71,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 WaveFunctionCollapseNaive wfc = (WaveFunctionCollapseNaive)target;
-                wfc.Generate();
+                wfc.GenerateFromEditor();
             }
 
             serializedObject.ApplyModifiedProperties();

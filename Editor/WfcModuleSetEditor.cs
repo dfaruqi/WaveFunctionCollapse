@@ -51,7 +51,10 @@ namespace MagusStudios.WaveFunctionCollapse
                     Debug.LogError("No active tilemap found in the scene.");
                 }
                 else
+                {
                     moduleSet.ScanTilemapAndOverwrite(targetTilemap);
+                    EditorUtility.SetDirty(moduleSet);
+                }
             }
 
             EditorGUILayout.Space();

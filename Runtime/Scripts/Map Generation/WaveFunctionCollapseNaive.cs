@@ -54,9 +54,11 @@ namespace MagusStudios.WaveFunctionCollapse
             tilemap = tilemaps[0];
         }
         
-        public void Generate()
+        public void GenerateFromEditor()
         {
             if (!Application.IsPlaying(this)) return;
+            
+            StopAllCoroutines();
             
             GetFirstTilemapInScene();
             GenerateMapAnimated(tilemap);

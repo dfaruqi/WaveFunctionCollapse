@@ -151,8 +151,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ModuleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
-  MapSize: {x: 16, y: 16}
+  MapSize: {x: 64, y: 64}
+  Blocks: {x: 4, y: 4}
+  BlockSize: {x: 32, y: 32}
+  DefaultTileId: 0
   Seed: 2647435460
+  GenerationMode: 0
 --- !u!4 &121875632
 Transform:
   m_ObjectHideFlags: 0
@@ -196,7 +200,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ModuleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
-  MapSize: {x: 10, y: 10}
+  MapSize: {x: 48, y: 48}
   Seed: 765479609
   animatedPassesPerSecond: 16
   animate: 0

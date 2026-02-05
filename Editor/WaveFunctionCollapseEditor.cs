@@ -102,7 +102,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 WaveFunctionCollapse wfc = (WaveFunctionCollapse)target;
-                wfc.Generate();
+                wfc.GenerateFromEditor();
             }
 
             serializedObject.ApplyModifiedProperties();

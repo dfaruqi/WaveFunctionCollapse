@@ -121,13 +121,11 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         // called from button in editor script (see WaveFunctionCollapseEditor)
-        public void Generate()
+        public void GenerateFromEditor()
         {
             if (!Application.IsPlaying(this)) return; // don't generate when not playing
             // (it would overwrite the tilemap in your scene in edit mode, which is
             // not desirable if using it to create module sets)
-
-            StopAllCoroutines();
 
             GetFirstTilemapInScene(); // update the tilemap
 
@@ -144,10 +142,10 @@ namespace MagusStudios.WaveFunctionCollapse
             switch (GenerationMode)
             {
                 case MapGenerationMode.Simple:
-                    map = GenerateMap();
+                    map = GenerateMap(ModuleSet, MapSize);
                     break;
                 case MapGenerationMode.Chunked:
-                    map = GenerateMapInBlocks(Blocks, BlockSize, DefaultTileId);
+                    map = GenerateMapInBlocks(ModuleSet, Blocks, BlockSize, DefaultTileId);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -163,7 +161,7 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         // Contains border information
-        private struct Borders
+        public struct Borders
         {
             public List<int> BorderUp;
             public List<int> BorderDown;
@@ -423,10 +421,18 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private int[,] GenerateMapInBlocks(Vector2Int size, Vector2Int blockSize, int defaultTileKey)
+        /// <summary>
+        /// [Fast] Generates a map of tile IDs according to the WFC algorithm in blocks. Use for large maps.
+        /// </summary>
+        /// <param name="moduleSet">Module set containing allowed neighbor information.</param>
+        /// <param name="size">Size of the map to generate in blocks.</param>
+        /// <param name="blockSize">Size of each block in tiles.</param>
+        /// <param name="defaultTileKey">The key of the default tile that should initially fill the map. (grass, sand, dirt, etc.)</param>
+        /// <returns></returns>
+        public int[,] GenerateMapInBlocks(WfcModuleSet moduleSet, Vector2Int size, Vector2Int blockSize, int defaultTileKey)
         {
             // create algorithm lookup data and state
-            WfcGlobals wfcGlobals = new WfcGlobals(ModuleSet);
+            WfcGlobals wfcGlobals = new WfcGlobals(moduleSet);
             WfcState[,] stateGrid = new WfcState[size.x, size.y];
 
             //create rng
@@ -693,17 +699,18 @@ namespace MagusStudios.WaveFunctionCollapse
                    y < grid.GetLength(1);
         }
 
-
         /// <summary>
         /// [Fast] Generates a map of tile IDs according to the WFC algorithm.
         /// </summary>
+        /// <param name="moduleSet">Module set containing allowed neighbor information.</param>
+        /// <param name="mapSize">Size of the map to generate in tiles.</param>
         /// <param name="borders">Optional borders to enforce adjacency along the edges of this map, useful for creating
-        /// larger maps in chunks. </param>
+        ///     larger maps in chunks. </param>
         /// <returns></returns>
-        /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum. </exception>
-        private int[,] GenerateMap(Borders borders = default)
+        /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum or no tiles. </exception>
+        public int[,] GenerateMap(WfcModuleSet moduleSet, Vector2Int mapSize, Borders borders = default)
         {
-            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = ModuleSet.Modules;
+            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
 
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
@@ -720,8 +727,8 @@ namespace MagusStudios.WaveFunctionCollapse
                 throw new System.Exception($"[{nameof(WaveFunctionCollapse)}] Module set has no tiles.");
             }
 
-            int width = MapSize.x;
-            int height = MapSize.y;
+            int width = mapSize.x;
+            int height = mapSize.y;
             int cellCount = width * height;
 
             // === Initialization of Readonly Lookup Structures ===
@@ -968,8 +975,6 @@ namespace MagusStudios.WaveFunctionCollapse
 
             return finalOutput;
         }
-
-        
     }
 
     /// <summary>
