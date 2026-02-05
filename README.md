@@ -2,7 +2,7 @@
 
 This package provides a highly performant implementation of **Wave Function Collapse (WFC)** procedural generation in 2D and a suite of editor tools to create and edit module sets seamlessly with Unity’s Tilemap Editor, optimized with Unity's jobs system and the burst compiler. Generation uses the simple-tiled method for module creation and lowest-entropy cell selection. For larger maps generated in chunks, the system uses an approach similar to [modifying-in-blocks](https://www.boristhebrave.com/2021/11/08/infinite-modifying-in-blocks/), but instead of generating only one block at a time, generates nonadjacent blocks at the same time on different worker threads, completing the map in 4 parallelized passes.
 
-![Demo](gifs/wfc1.gif) ![Demo](gifs/wfc2.gif)
+![demo1](https://github.com/dfaruqi/WaveFunctionCollapse/blob/main/Gifs/wfc1.gif) ![demo2](https://github.com/dfaruqi/WaveFunctionCollapse/blob/main/Gifs/wfc2.gif)
 
 ---
 
