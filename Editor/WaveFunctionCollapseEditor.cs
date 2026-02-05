@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
@@ -10,23 +11,34 @@ namespace MagusStudios.WaveFunctionCollapse
     {
         SerializedProperty moduleSet;
         SerializedProperty mapSize;
-        SerializedProperty animatedPassesPerSecond;
-        SerializedProperty animate;
-        SerializedProperty showDomains;
         SerializedProperty seed;
+        SerializedProperty generationMode;
+        SerializedProperty blocks;
+        SerializedProperty blockSize;
+        SerializedProperty defaultTileId;
 
         bool autoRandomize = true;
 
-        Unity.Mathematics.Random random = new Unity.Mathematics.Random(1);
+        private uint timeSeed = 1;
+
+        private Unity.Mathematics.Random random;
 
         private void OnEnable()
         {
-            moduleSet = serializedObject.FindProperty("moduleSet");
-            mapSize = serializedObject.FindProperty("mapSize");
-            animatedPassesPerSecond = serializedObject.FindProperty("animatedPassesPerSecond");
-            animate = serializedObject.FindProperty("animate");
-            showDomains = serializedObject.FindProperty("showDomains");
-            seed = serializedObject.FindProperty("seed");
+            moduleSet = serializedObject.FindProperty("ModuleSet");
+            mapSize = serializedObject.FindProperty("MapSize");
+            seed = serializedObject.FindProperty("Seed");
+            generationMode = serializedObject.FindProperty("GenerationMode");
+            blocks = serializedObject.FindProperty("Blocks");
+            blockSize = serializedObject.FindProperty("BlockSize");
+            defaultTileId = serializedObject.FindProperty("DefaultTileId");
+
+            uint tickCount = (uint)Environment.TickCount;
+            if (tickCount == 0) tickCount = 1;
+
+            var rng = new Unity.Mathematics.Random(tickCount);
+
+            random = new Unity.Mathematics.Random(timeSeed);
         }
 
         public override void OnInspectorGUI()
@@ -38,17 +50,34 @@ namespace MagusStudios.WaveFunctionCollapse
             EditorGUILayout.PropertyField(moduleSet);
             EditorGUILayout.Space(8);
 
-            // --- DIMENSIONS ---
-            EditorGUILayout.LabelField("Dimensions", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(mapSize);
-            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("Map Generation Mode", EditorStyles.boldLabel);
 
-            // --- ANIMATION ---
-            EditorGUILayout.LabelField("Animation", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(animatedPassesPerSecond);
-            EditorGUILayout.PropertyField(animate);
-            EditorGUILayout.PropertyField(showDomains);
-            EditorGUILayout.Space(8);
+            generationMode.enumValueIndex = GUILayout.Toolbar(
+                generationMode.enumValueIndex,
+                new[] { "Simple", "Chunked" }
+            );
+
+            WaveFunctionCollapse.MapGenerationMode mode =
+                (WaveFunctionCollapse.MapGenerationMode)generationMode.enumValueIndex;
+
+            switch (mode)
+            {
+                case WaveFunctionCollapse.MapGenerationMode.Simple:
+                    // --- DIMENSIONS ---
+                    EditorGUILayout.LabelField("Dimensions", EditorStyles.boldLabel);
+                    EditorGUILayout.PropertyField(mapSize);
+                    EditorGUILayout.Space(8);
+                    break;
+                case WaveFunctionCollapse.MapGenerationMode.Chunked:
+                    // --- DIMENSIONS ---
+                    EditorGUILayout.LabelField("Dimensions", EditorStyles.boldLabel);
+                    EditorGUILayout.PropertyField(blocks);
+                    EditorGUILayout.PropertyField(blockSize);
+                    EditorGUILayout.PropertyField(defaultTileId);
+                    EditorGUILayout.Space(8);
+                    break;
+            }
+
 
             // --- RANDOMIZATION ---
             EditorGUILayout.LabelField("Randomization", EditorStyles.boldLabel);
@@ -58,6 +87,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 seed.uintValue = random.NextUInt();
             }
+
             EditorGUILayout.EndHorizontal();
             autoRandomize = EditorGUILayout.Toggle("Auto Randomize", autoRandomize);
             EditorGUILayout.Space(12);

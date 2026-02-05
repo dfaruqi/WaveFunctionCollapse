@@ -129,6 +129,7 @@ GameObject:
   m_Component:
   - component: {fileID: 121875632}
   - component: {fileID: 121875631}
+  - component: {fileID: 121875635}
   - component: {fileID: 121875634}
   m_Layer: 0
   m_Name: WFC
@@ -149,12 +150,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4951fbec6792624bb9b55520f3a9a47, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moduleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
-  mapSize: {x: 64, y: 64}
-  animatedPassesPerSecond: 64
-  animate: 0
-  showDomains: 0
-  seed: 67634688
+  ModuleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
+  MapSize: {x: 16, y: 16}
+  Seed: 2647435460
 --- !u!4 &121875632
 Transform:
   m_ObjectHideFlags: 0
@@ -185,6 +183,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   numbersPrefab: {fileID: 7137274551189352112, guid: 049b4e2b48acb3a4292fbf79c9f0ac2d, type: 3}
   numbersParent: {fileID: 1337349056}
+--- !u!114 &121875635
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 121875629}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 177c6a108ed075d4ea1c54d3b130a266, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ModuleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
+  MapSize: {x: 10, y: 10}
+  Seed: 765479609
+  animatedPassesPerSecond: 16
+  animate: 0
+  showDomains: 0
 --- !u!1 &720180182
 GameObject:
   m_ObjectHideFlags: 0
@@ -276,7 +292,7 @@ TilemapRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_ChunkSize: {x: 32, y: 32, z: 32}
-  m_ChunkCullingBounds: {x: 15.5, y: 15.5, z: 0}
+  m_ChunkCullingBounds: {x: 0, y: 0, z: 0}
   m_MaxChunkCount: 16
   m_MaxFrameAge: 16
   m_SortOrder: 0
@@ -4070,7 +4086,7 @@ Grid:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 835464827}
   m_Enabled: 1
-  m_CellSize: {x: 16, y: 16, z: 0}
+  m_CellSize: {x: 1, y: 1, z: 0}
   m_CellGap: {x: 0, y: 0, z: 0}
   m_CellLayout: 0
   m_CellSwizzle: 0
@@ -4252,7 +4268,7 @@ Grid:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 986420089}
   m_Enabled: 1
-  m_CellSize: {x: 32, y: 32, z: 0}
+  m_CellSize: {x: 1, y: 1, z: 0}
   m_CellGap: {x: 0, y: 0, z: 0}
   m_CellLayout: 0
   m_CellSwizzle: 0
@@ -4394,7 +4410,7 @@ TilemapRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_ChunkSize: {x: 32, y: 32, z: 32}
-  m_ChunkCullingBounds: {x: 7.5, y: 7.5, z: 0}
+  m_ChunkCullingBounds: {x: 0, y: 0, z: 0}
   m_MaxChunkCount: 16
   m_MaxFrameAge: 16
   m_SortOrder: 0
