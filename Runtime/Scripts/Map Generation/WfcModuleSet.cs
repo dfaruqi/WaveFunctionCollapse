@@ -1,5 +1,4 @@
 ﻿using AYellowpaper.SerializedCollections;
-using MagusStudios.Arcanist.Utils;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -22,6 +21,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         public TileDatabase TileDatabase;
         public SerializedDictionary<int, TileModule> Modules;
+        public int DefaultTileKey = 0;
 
         public void ScanTilemapAndOverwrite(Tilemap tilemap)
         {

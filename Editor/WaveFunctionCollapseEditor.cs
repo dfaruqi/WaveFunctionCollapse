@@ -15,7 +15,6 @@ namespace MagusStudios.WaveFunctionCollapse
         SerializedProperty generationMode;
         SerializedProperty blocks;
         SerializedProperty blockSize;
-        SerializedProperty defaultTileId;
 
         bool autoRandomize = true;
 
@@ -31,7 +30,6 @@ namespace MagusStudios.WaveFunctionCollapse
             generationMode = serializedObject.FindProperty("GenerationMode");
             blocks = serializedObject.FindProperty("Blocks");
             blockSize = serializedObject.FindProperty("BlockSize");
-            defaultTileId = serializedObject.FindProperty("DefaultTileId");
 
             uint tickCount = (uint)Environment.TickCount;
             if (tickCount == 0) tickCount = 1;
@@ -73,7 +71,6 @@ namespace MagusStudios.WaveFunctionCollapse
                     EditorGUILayout.LabelField("Dimensions", EditorStyles.boldLabel);
                     EditorGUILayout.PropertyField(blocks);
                     EditorGUILayout.PropertyField(blockSize);
-                    EditorGUILayout.PropertyField(defaultTileId);
                     EditorGUILayout.Space(8);
                     break;
             }

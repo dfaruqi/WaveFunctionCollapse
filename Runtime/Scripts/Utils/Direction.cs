@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MagusStudios.Arcanist.Utils
+namespace MagusStudios.WaveFunctionCollapse
 {
     [System.Serializable]
     public enum Direction { Up, Down, Left, Right }
@@ -11,10 +11,7 @@ namespace MagusStudios.Arcanist.Utils
     {
         public static Direction Opposite(this Direction direction)
         {
-            if (direction == Direction.Up) return Direction.Down;
-            else if (direction == Direction.Down) return Direction.Up;
-            else if (direction == Direction.Left) return Direction.Right;
-            else return Direction.Left;
+            return (Direction)((int)direction ^ 1);
         }
 
         public static Vector2Int ToVector2Int(this Direction direction)

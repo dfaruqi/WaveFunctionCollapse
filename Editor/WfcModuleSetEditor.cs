@@ -1,5 +1,4 @@
 ﻿using AYellowpaper.SerializedCollections;
-using MagusStudios.Arcanist.Utils;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,10 +16,12 @@ namespace MagusStudios.WaveFunctionCollapse
         private WfcModuleSet moduleSet;
         private Vector2 scrollPosition;
         private SerializedProperty tileDatabaseProperty;
+        private SerializedProperty defaultTileIdProperty;
 
         private void OnEnable()
         {
             moduleSet = (WfcModuleSet)target;
+            defaultTileIdProperty = serializedObject.FindProperty("DefaultTileKey");
             tileDatabaseProperty = serializedObject.FindProperty("TileDatabase");
         }
 
@@ -39,6 +40,10 @@ namespace MagusStudios.WaveFunctionCollapse
                 DrawPropertiesExcluding(serializedObject, "Modules");
             }
 
+            EditorGUILayout.Space();
+            
+            EditorGUILayout.PropertyField(defaultTileIdProperty);
+            
             EditorGUILayout.Space();
 
             if (GUILayout.Button("Scan Active Tilemap and Overwrite"))
