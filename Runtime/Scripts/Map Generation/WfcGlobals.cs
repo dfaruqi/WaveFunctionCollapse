@@ -5,6 +5,10 @@ using Unity.Collections;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
+    /// <summary>
+    /// Contains state needed for Wave Function Collapse. WfcGlobals are read-only and can be shared by
+    /// multiple parallel runs.
+    /// </summary>
     public class WfcGlobals
     {
         public NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> Modules;

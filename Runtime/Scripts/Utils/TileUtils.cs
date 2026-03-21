@@ -8,7 +8,7 @@ namespace MagusStudios.WaveFunctionCollapse
     {
         /// <summary>
         /// Deterministically hashes a Vector3Int into a uniform integer in [1, n].
-        /// Produces consistent results for the same input, ideal for deterministic procedural tiling.
+        /// Produces consistent results for the same input for deterministic procedural tiling.
         /// </summary>
         public static int HashPosition(Vector3Int pos, int n)
         {

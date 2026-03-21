@@ -814,3 +814,4 @@ MonoBehaviour:
           - Key: 3
             Value:
               serializedList: 00000000
+  DefaultTileKey: 0

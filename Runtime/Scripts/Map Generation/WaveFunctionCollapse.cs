@@ -99,8 +99,15 @@ namespace MagusStudios.WaveFunctionCollapse
 
             Debug.Log($"[{nameof(WaveFunctionCollapse)}] Finished generation in {stopwatch.Elapsed} seconds.");
 
+            stopwatch.Reset();
+            stopwatch.Start();
+
             //load the map into the first tilemap found in the scene
             TileUtils.LoadMapData(tilemap, map, ModuleSet.TileDatabase);
+
+            stopwatch.Stop();
+
+            Debug.Log($"[{nameof(WaveFunctionCollapse)}] Finished setting tiles on tilemap in {stopwatch.Elapsed} seconds.");
         }
 
         /// <summary>
