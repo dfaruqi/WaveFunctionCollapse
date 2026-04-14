@@ -1,4 +1,7 @@
+using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
@@ -20,6 +23,19 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 return (Mathf.Abs(hash) % n) + 1;
             }
+        }
+        
+        public static uint HashWorldBlock(uint seed, Vector2Int v, byte b)
+        {
+            Span<byte> buffer = stackalloc byte[9]; // int x (4) + int y (4) + byte b (1)
+
+            BinaryPrimitives.WriteInt32LittleEndian(buffer[0..4], v.x);
+            BinaryPrimitives.WriteInt32LittleEndian(buffer[4..8], v.y);
+            buffer[8] = b;
+
+            ReadOnlySpan<byte> bytes = buffer;
+
+            return MurmurHash3.Hash32(ref bytes, seed);
         }
 
         public static void LoadMapData(Tilemap tilemap, int[,] map, TileDatabase tileDatabase)

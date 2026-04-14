@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
@@ -9,6 +11,7 @@ using Unity.Jobs;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using Random = Unity.Mathematics.Random;
+using Vector3 = UnityEngine.Vector3;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
@@ -16,15 +19,9 @@ namespace MagusStudios.WaveFunctionCollapse
     {
         public Transform Target; // The target transform to generate the world around (the player)
         public Tilemap TargetTilemap; // The target tilemap to generate the world upon
+        public uint Seed;
 
-        [SerializeField] [Header("Load chunks that are within this radius (in units of chunks)")]
-        float loadRadius = 2.5f;
-
-        [SerializeField] [Header("Unload chunks that are outside this radius (in units of chunks)")]
-        float unloadRadius = 4.5f;
-
-        [SerializeField] [Header("Overlap for layered block evaluation")]
-        private int _overlap = 2;
+        [SerializeField] int drawDistance = 1;
 
         [SerializeField] private WfcModuleSet _moduleSet;
 
@@ -33,36 +30,45 @@ namespace MagusStudios.WaveFunctionCollapse
         // directory where chunks are saved
         private string _chunkDirectory;
 
+        // size of loaded/saved chunks, must be even
+        // suggestions: 16,32,48,64
         private const int CHUNK_SIZE = 48;
+
+        // size of generated blocks, which are later converted to chunks. Must satisfy the following:
+        // BLOCKSIZE is even and BLOCK_SIZE < CHUNK_SIZE and BLOCK_SIZE > CHUNK_SIZE / 2
+        // suggestions: 12,24,36,48
+        private const int BLOCK_SIZE = 36;
 
         // ~ State ~
 
         // Chunks currently loaded and their data
         private readonly Dictionary<Vector2Int, int[]> _loadedChunks = new();
 
-        // all blocks generated and the layer they have been generated through
-        private Dictionary<Vector2Int, byte> _generatedBlocks = new Dictionary<Vector2Int, byte>();
+        // Chunks currently drawn and on the tilemap
+        private readonly HashSet<Vector2Int> _drawnChunks = new();
 
-        // all chunks pregenerated with grass only
-        private HashSet<Vector2Int> _pregeneratedChunks = new();
+        // List of job handles for blocks currently generating
+        private readonly List<JobHandle> _jobHandles = new List<JobHandle>();
 
-        // todo cached containers for UpdateChunks
-        // chunks generated this update
-        // chunks loaded this update
+        // record of all blocks generated and the layer they have been generated through
+        // (0=pregenerated, 1-4=layers 1-4)
+        private Dictionary<Vector2Int, byte> _allGeneratedBlocks = new Dictionary<Vector2Int, byte>();
 
         private Vector2Int _lastPlayerChunk = new Vector2Int(int.MaxValue, int.MaxValue);
 
-        private static readonly Vector2Int[] _neighborOffsets =
+        private static readonly Vector2Int[] NeighborOffsets =
         {
-            new Vector2Int(-1, -1),
-            new Vector2Int(0, -1),
-            new Vector2Int(1, -1),
-            new Vector2Int(-1, 0),
-            new Vector2Int(1, 0),
-            new Vector2Int(-1, 1),
-            new Vector2Int(0, 1),
-            new Vector2Int(1, 1),
+            new(-1, 1), // UpLeft
+            new(0, 1), // Up
+            new(1, 1), // UpRight
+            new(-1, 0), // Left
+            new(1, 0), // Right
+            new(-1, -1), // DownLeft
+            new(0, -1), // Down
+            new(1, -1), // DownRight
         };
+
+        private Vector2Int[] BlockOffsets = new Vector2Int[4];
 
         private void Awake()
         {
@@ -77,10 +83,14 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             // load all generated chunk coords
-            _generatedBlocks = LoadChunkLayers(GetChunkLayersPath());
+            _allGeneratedBlocks = LoadChunkLayers(GetAllGeneratedBlocksPath());
 
-            // load all pregenerated chunk coords
-            _pregeneratedChunks = LoadPregeneratedChunks(GetPregeneratedChunksPath());
+            // initialize offsets for blocks (global data)
+            int blockGap = CHUNK_SIZE - BLOCK_SIZE;
+            BlockOffsets[0] = new Vector2Int(blockGap / 2, -CHUNK_SIZE / 2 + blockGap / 2);
+            BlockOffsets[1] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, -CHUNK_SIZE / 2 + blockGap / 2);
+            BlockOffsets[2] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, blockGap / 2);
+            BlockOffsets[3] = new Vector2Int(blockGap / 2, blockGap / 2);
 
             TargetTilemap.ClearAllTiles();
             TargetTilemap.RefreshAllTiles();
@@ -95,6 +105,26 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             StopAllCoroutines();
         }
+
+        // private void Update()
+        // {
+        //     // return if no jobs scheduled
+        //     if (_jobHandles.Count <= 0) return;
+        //
+        //     bool allJobsComplete = true;
+        //     // return if jobs scheduled but any are still running
+        //     for (int i = _jobHandles.Count - 1; i >= 0; i--)
+        //     {
+        //         if (_jobHandles[i].IsCompleted)
+        //             _jobHandles.RemoveAt(i);
+        //         else allJobsComplete = false;
+        //     }
+        //
+        //     if (!allJobsComplete) return;
+        //
+        //     // if all scheduled jobs are complete, clear the list
+        //     _jobHandles.Clear();
+        // }
 
         private IEnumerator StreamWorld()
         {
@@ -112,333 +142,500 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        // private void UpdateChunks(Vector2Int playerChunkPosition)
-        // {
-        //     // --- Get blocks and layers to generate  ---
-        //
-        //     // Get positions of all chunks that are close to the player and not already loaded. They will be loaded and
-        //     // generated if not already.
-        //     GetNewBlocksInLoadRadius(playerChunkPosition, out HashSet<Vector2Int> newBlocksInLoadRadius);
-        //
-        //     // container to get all blocks that should be generated and to what layer they should be generated to
-        //     HashSet<Vector2Int>[] blocksToGenerate = new HashSet<Vector2Int>[4]; // 4 passes of generation
-        //     
-        //     // initialize it
-        //     for (int i = 0; i < blocksToGenerate.Length; i++)
-        //     {
-        //         blocksToGenerate[i] = new HashSet<Vector2Int>();
-        //     }
-        //
-        //     // first, add all chunks we want fully generated to layer 4
-        //     foreach (Vector2Int block in newBlocksInLoadRadius)
-        //     {
-        //         if (!_generatedBlocks.ContainsKey(block))
-        //         {
-        //             blocksToGenerate[3].Add(block);
-        //         }
-        //         if (_generatedBlocks[block] < 4)
-        //             blocksToGenerate[3].Add(block);
-        //     }
-        //
-        //     // Fill the dict with adjacent dependent blocks for each block that will be fully generated through layer 4.
-        //     // The layer 4 block at x, y depends on layer 3 blocks at x, y and x - 1, y
-        //     // The layer 3 block at x, y depends on layer 2 blocks at x, y and x, y+1
-        //     // The layer 2 block at x, y depends  on layer 1 blocks x, y and x+1, y
-        //     // The layer 1 block at x, y has no dependencies
-        //     // Thus, a layer 4 block at x, y will have 12 other blocks at different layers that it depends on if you 
-        //     // cascade the dependencies. The system will generate blocks in lower layers first to accommodate blocks
-        //     // that are scheduled for generation at higher layers. This keeps generation deterministic and constant
-        //     // time. It also reduces the error rate and prevents errors at edges of the map.
-        //
-        //     // add all dependent chunks for each layer
-        //
-        //     // The layer 4 block at x, y depends on layer 3 blocks at x, y and x - 1, y
-        //     foreach (Vector2Int block in blocksToGenerate[3])
-        //     {
-        //         for (int x = 0; x >= -1; x--)
-        //         {
-        //             Vector2Int dependent = block + new Vector2Int(block.x + x, block.y);
-        //             if (!_generatedBlocks.ContainsKey(dependent) || _generatedBlocks[dependent] < 3)
-        //             {
-        //                 if (!blocksToGenerate[2].Contains(dependent))
-        //                     blocksToGenerate[2].Add(dependent);
-        //             }
-        //         }
-        //     }
-        //
-        //     // The layer 3 block at x, y depends on layer 2 blocks at x, y and x, y+1
-        //     foreach (Vector2Int block in blocksToGenerate[2])
-        //     {
-        //         for (int y = 0; y <= 1; y++)
-        //         {
-        //             Vector2Int dependent = block + new Vector2Int(block.x, block.y + y);
-        //             if (!_generatedBlocks.ContainsKey(dependent) || _generatedBlocks[dependent] < 2)
-        //             {
-        //                 if(!blocksToGenerate[1].Contains(dependent))
-        //                     blocksToGenerate[1].Add(dependent);
-        //             }
-        //         }
-        //     }
-        //
-        //     // The layer 2 block at x, y depends  on layer 1 blocks x, y and x+1, y
-        //     foreach (Vector2Int block in blocksToGenerate[1])
-        //     {
-        //         for (int x = 0; x <= 1; x++)
-        //         {
-        //             Vector2Int dependent = block + new Vector2Int(block.x + x, block.y);
-        //             if (!_generatedBlocks.ContainsKey(dependent) || _generatedBlocks[dependent] < 1)
-        //             {
-        //                 blocksToGenerate[0].Add(dependent);
-        //             }
-        //         }
-        //     }
-        //     
-        //     // todo seed randomization with hash of block position and layer
-        //     // todo get positions of all chunks that are loaded currently and outside the load radius. They will be unloaded.
-        //     // GetChunksToUnload(playerChunkPosition, out HashSet<Vector2Int> chunksToUnload);
-        //     
-        //     // --- Generate using WfcJob instances ---
-        //
-        //     // create a dictionary to track all the wave function collapse runs
-        //     Dictionary<Vector2Int, WfcState> stateDict = new();
-        //
-        //     // Create the globals for wfc
-        //     WfcGlobals wfcGlobals = new WfcGlobals(_moduleSet);
-        //     // todo when biomes are added, one of these will be needed for each module set
-        //
-        //     // create rng
-        //     Random blockSeedGenerator = new Random(Seed);
-        //
-        //     // generate the chunks in 4 passes using the modifying-in-blocks approach
-        //     for (int pass = 0; pass < 4; pass++)
-        //     {
-        //         List<JobHandle> jobHandles = new List<JobHandle>();
-        //         foreach (Vector2Int chunk in blocksToGenerate[pass])
-        //         {
-        //             // get the border information from the neighbors and stuff
-        //             int blockSize = CHUNK_SIZE + _overlap * 2;
-        //             WfcUtils.Borders borders = GetBorders(extraChunks, chunk, wfcGlobals.moduleKeyToIndex);
-        //             WfcState wfcState = new WfcState(new Vector2Int(blockSize, blockSize),
-        //                 _moduleSet.Modules.Count, borders);
-        //
-        //             // add to state dict to keep track of this run of wfc
-        //             stateDict.Add(chunk, wfcState);
-        //
-        //             Unity.Mathematics.Random rng = new Random(blockSeedGenerator.NextUInt());
-        //
-        //             // === Create and schedule the job ===
-        //             WfcJob wfc = new WfcJob
-        //             {
-        //                 Modules = wfcGlobals.Modules,
-        //                 Weights = wfcGlobals.Weights,
-        //                 Cells = wfcState.Cells,
-        //                 AllDirectionPermutations = wfcGlobals.directions,
-        //                 UpBorder = wfcState.UpBorder,
-        //                 DownBorder = wfcState.DownBorder,
-        //                 LeftBorder = wfcState.LeftBorder,
-        //                 RightBorder = wfcState.RightBorder,
-        //                 EntropyHeap = wfcState.EntropyHeap,
-        //                 EntropyIndices = wfcState.EntropyIndices,
-        //                 random = rng,
-        //                 PropagationStack = wfcState.PropagationStack,
-        //                 PropagationStackTop = 0,
-        //                 Width = blockSize,
-        //                 Height = blockSize,
-        //                 Output = wfcState.Output,
-        //                 Flag = WfcJob.State.OK
-        //             };
-        //
-        //             wfcState.Job = wfc;
-        //
-        //             // generate the chunk
-        //             jobHandles.Add(wfc.Schedule());
-        //         }
-        //
-        //         // Complete all scheduled jobs
-        //         NativeArray<JobHandle> jobHandlesNative =
-        //             new NativeArray<JobHandle>(WfcUtils.AllDirectionOrders.Length, Allocator.Persistent);
-        //
-        //         jobHandlesNative = new NativeArray<JobHandle>(jobHandles.Count, Allocator.Persistent);
-        //         for (int i = 0; i < jobHandles.Count; i++)
-        //         {
-        //             jobHandlesNative[i] = jobHandles[i];
-        //         }
-        //
-        //         JobHandle.CompleteAll(jobHandlesNative);
-        //
-        //         // Update the affected chunks
-        //         foreach (KeyValuePair<Vector2Int, WfcState> kvp in stateDict)
-        //         {
-        //             Vector2Int pos = kvp.Key;
-        //             WfcState wfcState = kvp.Value;
-        //
-        //             UpdateChunksFromBlock(pos, wfcState);
-        //         }
-        //     }
-        //
-        //     // todo update the generated blocks global and also write that to file
-        //
-        //     // write changes to file
-        //
-        //     // finally, update the tilemap with the changes to _loadedChunks
-        // }
-
         private IEnumerator UpdateChunks(Vector2Int playerChunkPosition)
         {
-            GetUnloadedChunksInLoadRadius(playerChunkPosition, out HashSet<Vector2Int> chunksToLoadOrGenerate);
+            // - Load Chunks -
 
-            // keep track of chunks we will generate or load
-            HashSet<Vector2Int> chunksGenerated = new HashSet<Vector2Int>();
-            HashSet<Vector2Int> chunksLoadedOrGenerated = new HashSet<Vector2Int>();
+            HashSet<Vector2Int> unloadedChunksInLoadDistance = new HashSet<Vector2Int>();
+            GetUnloadedChunksInLoadDistance(playerChunkPosition, ref unloadedChunksInLoadDistance);
+
+            // keep track of chunks that get generated, loaded, or unloaded
+            HashSet<Vector2Int> chunksPregenerated = new HashSet<Vector2Int>();
+            HashSet<Vector2Int> chunksUnloaded = new HashSet<Vector2Int>();
 
             // load or pre-generate
-            foreach (Vector2Int chunkPos in chunksToLoadOrGenerate)
+            foreach (Vector2Int chunkPos in unloadedChunksInLoadDistance)
             {
-                // case: chunk has never been pregenerated -> pregenerate it then load it into _loadedChunks
-                if (!_pregeneratedChunks.Contains(chunkPos))
+                LoadOrPregenerateChunk(chunkPos, ref chunksPregenerated);
+                yield return null;
+            }
+
+            // - Generate Blocks -
+
+            // generate blocks
+            // container to get all blocks that should be generated and to what layer they should be generated to
+            HashSet<Vector2Int>[] blocksToGenerate = new HashSet<Vector2Int>[4]; // 4 passes of generation 0-3
+            for (int i = 0; i < blocksToGenerate.Length; i++)
+            {
+                blocksToGenerate[i] = new HashSet<Vector2Int>();
+            }
+
+            GetChunksInDistance(playerChunkPosition, drawDistance, out HashSet<Vector2Int> chunksInDrawDistance);
+
+            foreach (Vector2Int chunk in chunksInDrawDistance)
+            {
+                if (_allGeneratedBlocks[chunk] < 4) blocksToGenerate[3].Add(chunk);
+            }
+
+            CascadeBlockDependencies(ref blocksToGenerate);
+
+            yield return StartCoroutine(GenerateBlocks(blocksToGenerate));
+
+            // update all generated blocks dictionary
+            for (byte i = 0; i < 4; i++)
+            {
+                foreach (Vector2Int block in blocksToGenerate[i])
                 {
-                    // pre-generate the chunk with grass only
-                    int size = CHUNK_SIZE * CHUNK_SIZE;
-                    int[] grass = new int[size];
-                    for (int i = 0; i < size; i++)
+                    byte oldBlockGeneratedTo = _allGeneratedBlocks[block];
+                    byte newBlockGeneratedTo = (byte)(i + 1);
+                    if (oldBlockGeneratedTo < newBlockGeneratedTo) _allGeneratedBlocks[block] = newBlockGeneratedTo;
+                }
+            }
+
+            yield return null;
+
+            // - Unload Chunks -
+
+            // unload chunks
+            GetChunksOutsideDistance(playerChunkPosition, drawDistance + 3, _loadedChunks.Keys,
+                out HashSet<Vector2Int> chunksToUnload);
+
+            foreach (Vector2Int chunkPos in chunksToUnload)
+            {
+                if (_loadedChunks.Remove(chunkPos)) chunksUnloaded.Add(chunkPos);
+            }
+
+            // - Update Files -
+
+            HashSet<Vector2Int> chunksAffectedByGeneration = new HashSet<Vector2Int>();
+
+            foreach (Vector2Int block in blocksToGenerate[0])
+            {
+                chunksAffectedByGeneration.Add(block);
+                chunksAffectedByGeneration.Add(block + Vector2Int.down);
+            }
+
+            foreach (Vector2Int block in blocksToGenerate[1])
+            {
+                chunksAffectedByGeneration.Add(block);
+                chunksAffectedByGeneration.Add(block + Vector2Int.right);
+                chunksAffectedByGeneration.Add(block + Vector2Int.down);
+                chunksAffectedByGeneration.Add(block + Vector2Int.right + Vector2Int.down);
+            }
+
+            foreach (Vector2Int block in blocksToGenerate[2])
+            {
+                chunksAffectedByGeneration.Add(block);
+                chunksAffectedByGeneration.Add(block + Vector2Int.right);
+            }
+
+            foreach (Vector2Int block in blocksToGenerate[3])
+            {
+                chunksAffectedByGeneration.Add(block);
+            }
+
+            // add chunks that were pregenerated (if not already added)
+            foreach (Vector2Int chunk in chunksPregenerated)
+            {
+                chunksAffectedByGeneration.Add(chunk);
+            }
+
+            // write all chunks that were changed to file 
+            foreach (Vector2Int chunkPos in chunksAffectedByGeneration)
+            {
+                SaveChunk(chunkPos, _loadedChunks[chunkPos]);
+                yield return null;
+            }
+
+            // write all generated blocks dictionary to file
+            SaveAllGeneratedBlocksDict(_allGeneratedBlocks, GetAllGeneratedBlocksPath());
+
+            // - Update Tilemap - 
+
+            // draw chunks that are within the draw distance and were affected by generation or are not drawn
+            foreach (Vector2Int chunkPos in chunksInDrawDistance)
+            {
+                if (!_drawnChunks.Contains(chunkPos) || chunksAffectedByGeneration.Contains(chunkPos))
+                {
+                    TileBase[] tileBases = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
+
+                    for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
                     {
-                        grass[i] = _moduleSet.DefaultTileKey;
+                        tileBases[i] =
+                            _moduleSet.TileDatabase.Tiles
+                                [_loadedChunks[chunkPos][i]]; // todo maybe put some rails on all this access?
                     }
 
-                    _loadedChunks.Add(chunkPos, grass);
-                    chunksGenerated.Add(chunkPos);
-                    chunksLoadedOrGenerated.Add(chunkPos);
-                    _pregeneratedChunks.Add(chunkPos);
-                    continue;
-                }
+                    Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
+                    BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
 
-                // case: chunk exists but not loaded -> load it into _loadedChunks
-                if (!_loadedChunks.ContainsKey(chunkPos))
-                {
-                    _loadedChunks.Add(chunkPos, LoadChunk(chunkPos)); // load from file
-                    chunksLoadedOrGenerated.Add(chunkPos);
+                    TargetTilemap.SetTilesBlock(bounds, tileBases);
+
+                    _drawnChunks.Add(chunkPos);
+
                     yield return null;
                 }
             }
 
-            yield return null;
-
-            // write new pregenerated chunks to file
-            foreach (Vector2Int chunkPos in chunksGenerated)
+            // un-draw chunks that are drawn and outside draw distance
+            GetChunksOutsideDistance(playerChunkPosition, drawDistance + 1, _drawnChunks,
+                out HashSet<Vector2Int> chunksToUndraw);
+            TileBase[] nullArray = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
+            foreach (Vector2Int chunkPos in chunksToUndraw)
             {
-                SaveChunk(chunkPos, _loadedChunks[chunkPos]);
-            }
-
-            Debug.Log($"[{nameof(WfcWorldStreamer)}] Pre-generated {chunksGenerated.Count} new chunks.");
-
-            // write pregeneratedChunks hash set to file
-            SavePregeneratedChunks(GetPregeneratedChunksPath(), _pregeneratedChunks);
-
-            Debug.Log($"[{nameof(WfcWorldStreamer)}] Saved {chunksGenerated.Count} new chunks to file.");
-            yield return null;
-
-            // unload chunks
-            GetLoadedChunksOutsideUnloadRadius(playerChunkPosition, out HashSet<Vector2Int> chunksToUnload);
-
-            foreach (Vector2Int chunkPos in chunksToUnload)
-            {
-                _loadedChunks.Remove(chunkPos);
-            }
-
-            // update the tilemap with all chunks generated or loaded this map update
-            foreach (Vector2Int chunkPos in chunksLoadedOrGenerated)
-            {
-                TileBase[] tileBases = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
-
-                for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
-                {
-                    tileBases[i] = _moduleSet.TileDatabase.Tiles[_loadedChunks[chunkPos][i]];
-                }
-
                 Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
                 BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
-
-                TargetTilemap.SetTilesBlock(bounds, tileBases);
-                yield return null;
-            }
-
-            Debug.Log($"[{nameof(WfcWorldStreamer)}] Updated the tilemap with {chunksLoadedOrGenerated.Count} chunks.");
-
-            // finally, unload any chunks that are outside the unload radius and update the tilemap again
-            foreach (Vector2Int chunkPos in chunksToUnload)
-            {
-                _loadedChunks.Remove(chunkPos);
-
-                Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
-                BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
-
-                TileBase[] nullArray = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
-
-                for (int i = 0; i < nullArray.Length; i++)
-                {
-                    nullArray[i] = null;
-                }
 
                 TargetTilemap.SetTilesBlock(bounds, nullArray);
+
+                _drawnChunks.Remove(chunkPos);
+
                 yield return null;
             }
 
+            // - Log -
+
             Debug.Log(
-                $"[{nameof(WfcWorldStreamer)}] Unloaded {chunksToUnload.Count} chunks and updated tilemap.");
+                $"{nameof(WfcWorldStreamer)} Chunk Updates - \n   loaded/generated: {unloadedChunksInLoadDistance.Count}]\n   unloaded: {chunksToUnload.Count})");
         }
 
-        private void GetUnloadedChunksInLoadRadius(Vector2Int playerChunkPosition,
-            out HashSet<Vector2Int> chunksToLoadOrGenerate)
+        private IEnumerator GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
         {
-            chunksToLoadOrGenerate = new();
+            // create a dictionary to track all the wave function collapse runs
+            Dictionary<Vector2Int, WfcState> stateDict = new();
 
-            // get chunks that should be loaded (if previously generated) or generated (if new) with proximity to the player
-            float rSquared = loadRadius * loadRadius;
+            // Create the globals for wfc
+            WfcGlobals wfcGlobals = new WfcGlobals(_moduleSet);
+            // todo when biomes are added, one of these will be needed for each module set
 
-            int chunkCeil = Mathf.CeilToInt(loadRadius);
-            for (int y = -chunkCeil; y <= chunkCeil; y++)
+            // generate the chunks in 4 passes using the modifying-in-blocks approach
+            for (byte pass = 0; pass < 4; pass++)
             {
-                for (int x = -chunkCeil; x <= chunkCeil; x++)
+                foreach (Vector2Int chunk in blocksToGenerate[pass])
                 {
-                    if (x * x + y * y > rSquared) continue;
+                    // get the border information for this block from loaded chunks
+                    WfcUtils.Borders borders = GetBordersOfBlock(chunk, pass, wfcGlobals.moduleKeyToIndex);
+                    WfcState wfcState = new WfcState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
+                        _moduleSet.Modules.Count, borders);
 
+                    // add to state dict to keep track of this run of wfc
+                    stateDict.Add(chunk, wfcState);
+
+                    Unity.Mathematics.Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, pass));
+
+                    // === Create and schedule the job ===
+                    WfcJob wfc = new WfcJob
+                    {
+                        Modules = wfcGlobals.Modules,
+                        Weights = wfcGlobals.Weights,
+                        Cells = wfcState.Cells,
+                        AllDirectionPermutations = wfcGlobals.directions,
+                        UpBorder = wfcState.UpBorder,
+                        DownBorder = wfcState.DownBorder,
+                        LeftBorder = wfcState.LeftBorder,
+                        RightBorder = wfcState.RightBorder,
+                        EntropyHeap = wfcState.EntropyHeap,
+                        EntropyIndices = wfcState.EntropyIndices,
+                        random = rng,
+                        PropagationStack = wfcState.PropagationStack,
+                        PropagationStackTop = 0,
+                        Width = BLOCK_SIZE,
+                        Height = BLOCK_SIZE,
+                        Output = wfcState.Output,
+                        Flag = WfcJob.State.OK
+                    };
+
+                    // generate the block
+                    _jobHandles.Add(wfc.Schedule());
+                }
+
+                yield return new WaitUntil(() => { return _jobHandles.All(jobHandle => jobHandle.IsCompleted); });
+
+                foreach (JobHandle jobHandle in _jobHandles)
+                {
+                    jobHandle.Complete();
+                }
+
+                _jobHandles.Clear();
+
+                // Update the affected loaded chunks--the changes will be needed for future passes
+                foreach (KeyValuePair<Vector2Int, WfcState> kvp in stateDict)
+                {
+                    Vector2Int pos = kvp.Key;
+                    WfcState wfcState = kvp.Value;
+
+                    // If has error in output, fall back to previous layer, otherwise update the loaded chunks
+                    //if (!HasErrorInOutput(wfcState.Output))
+                    UpdateChunksFromBlock(pos, pass, wfcState, wfcGlobals.moduleIndexToKey);
+
+                    // clean up state
+                    wfcState.Dispose();
+                }
+
+                stateDict.Clear();
+            }
+
+            // clean up globals
+
+            wfcGlobals.Dispose();
+        }
+
+        private void GetUnloadedChunksInLoadDistance(Vector2Int playerChunkPosition,
+            ref HashSet<Vector2Int> chunksToLoadOrGenerate)
+        {
+            chunksToLoadOrGenerate.Clear();
+
+            int chunkCeilX = drawDistance + 3;
+            int chunkCeilY = drawDistance + 2;
+
+            for (int y = -chunkCeilY; y <= chunkCeilY; y++)
+            {
+                for (int x = -chunkCeilX; x <= chunkCeilX; x++)
+                {
                     Vector2Int chunkPos = playerChunkPosition + new Vector2Int(x, y);
                     if (!_loadedChunks.ContainsKey(chunkPos)) chunksToLoadOrGenerate.Add(chunkPos);
                 }
             }
         }
 
-        private void GetLoadedChunksOutsideUnloadRadius(Vector2Int playerChunkPosition,
-            out HashSet<Vector2Int> chunksToUnload)
+        private void GetChunksOutsideDistance(Vector2Int position, int distance, ICollection<Vector2Int> chunks,
+            out HashSet<Vector2Int> chunksOutsideDistance)
         {
-            chunksToUnload = new HashSet<Vector2Int>();
-
-            float rSquared = unloadRadius * unloadRadius;
-
-            foreach (KeyValuePair<Vector2Int, int[]> kvp in _loadedChunks)
+            chunksOutsideDistance = new HashSet<Vector2Int>();
+            foreach (Vector2Int chunkPos in chunks)
             {
-                Vector2Int chunk = kvp.Key;
-
-                Vector2Int delta = playerChunkPosition - chunk;
-
-                if (delta.x * delta.x + delta.y * delta.y >= rSquared)
+                if (Mathf.Abs(position.y - chunkPos.y) > distance ||
+                    Mathf.Abs(position.x - chunkPos.x) > distance)
                 {
-                    chunksToUnload.Add(chunk);
+                    chunksOutsideDistance.Add(chunkPos);
                 }
             }
         }
 
-        private static readonly Vector2Int[] NeighborOffsets =
+        private void GetChunksInDistance(Vector2Int position, int distance, out HashSet<Vector2Int> chunksInDistance)
         {
-            new(-1, 1), // UpLeft
-            new(0, 1), // Up
-            new(1, 1), // UpRight
-            new(-1, 0), // Left
-            new(1, 0), // Right
-            new(-1, -1), // DownLeft
-            new(0, -1), // Down
-            new(1, -1), // DownRight
-        };
+            chunksInDistance = new();
+
+            for (int y = -distance; y <= distance; y++)
+            {
+                for (int x = -distance; x <= distance; x++)
+                {
+                    Vector2Int chunkPos = position + new Vector2Int(x, y);
+                    chunksInDistance.Add(chunkPos);
+                }
+            }
+        }
+
+        private void LoadOrPregenerateChunk(Vector2Int chunkPos, ref HashSet<Vector2Int> chunksPregenerated)
+        {
+            // case: chunk has never been pregenerated -> pregenerate it then load it into _loadedChunks
+            if (!_allGeneratedBlocks.ContainsKey(chunkPos))
+            {
+                // pre-generate the chunk with grass only
+                // todo any custom pregeneration here
+                int size = CHUNK_SIZE * CHUNK_SIZE;
+                int[] grass = new int[size];
+                for (int i = 0; i < size; i++)
+                {
+                    grass[i] = _moduleSet.DefaultTileKey;
+                }
+
+                _loadedChunks.Add(chunkPos, grass);
+                chunksPregenerated.Add(chunkPos);
+                _allGeneratedBlocks.Add(chunkPos, 0);
+                return;
+            }
+
+            // case: chunk exists but not loaded -> load it into _loadedChunks
+            if (!_loadedChunks.ContainsKey(chunkPos))
+            {
+                _loadedChunks.Add(chunkPos, LoadChunk(chunkPos)); // load from file
+            }
+        }
+
+        private void CascadeBlockDependencies(ref HashSet<Vector2Int>[] blocksToGenerate)
+        {
+            // The layer 4 block at x, y depends on layer 3 blocks at x, y and x - 1, y
+            foreach (Vector2Int block in blocksToGenerate[3])
+            {
+                for (int x = 0; x >= -1; x--)
+                {
+                    Vector2Int dependent = new Vector2Int(block.x + x, block.y);
+                    if (_allGeneratedBlocks[dependent] < 3)
+                    {
+                        if (!blocksToGenerate[2].Contains(dependent))
+                            blocksToGenerate[2].Add(dependent);
+                    }
+                }
+            }
+
+            // The layer 3 block at x, y depends on layer 2 blocks at x, y and x, y+1
+            foreach (Vector2Int block in blocksToGenerate[2])
+            {
+                for (int y = 0; y <= 1; y++)
+                {
+                    Vector2Int dependent = new Vector2Int(block.x, block.y + y);
+                    if (_allGeneratedBlocks[dependent] < 2)
+                    {
+                        if (!blocksToGenerate[1].Contains(dependent))
+                            blocksToGenerate[1].Add(dependent);
+                    }
+                }
+            }
+
+            // The layer 2 block at x, y depends  on layer 1 blocks x, y and x+1, y
+            foreach (Vector2Int block in blocksToGenerate[1])
+            {
+                for (int x = 0; x <= 1; x++)
+                {
+                    Vector2Int dependent = new Vector2Int(block.x + x, block.y);
+                    if (_allGeneratedBlocks[dependent] < 1)
+                    {
+                        blocksToGenerate[0].Add(dependent);
+                    }
+                }
+            }
+        }
+
+
+        private bool HasErrorInOutput(NativeArray<int> output)
+        {
+            foreach (int value in output)
+            {
+                if (value < 0) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Get Borders of this block in key-space
+        /// </summary>
+        /// <param name="chunk"></param>
+        /// <param name="blockLayer"></param>
+        /// <param name="moduleKeyToIndex"></param>
+        /// <returns></returns>
+        private WfcUtils.Borders GetBordersOfBlock(Vector2Int chunk, int blockLayer,
+            Dictionary<int, int> moduleKeyToIndex)
+        {
+            WfcUtils.Borders borders = new WfcUtils.Borders()
+            {
+                BorderDown = new List<int>(),
+                BorderUp = new List<int>(),
+                BorderLeft = new List<int>(),
+                BorderRight = new List<int>(),
+            };
+
+            Vector2Int blockStartPos = BlockOffsets[blockLayer];
+
+            // top border
+            for (int t = 0; t < BLOCK_SIZE; t++)
+            {
+                Vector2Int borderStartPos = blockStartPos + new Vector2Int(t, BLOCK_SIZE);
+                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
+                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
+                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
+                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
+
+                borders.BorderUp.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
+            }
+
+            // bottom border
+            for (int t = 0; t < BLOCK_SIZE; t++)
+            {
+                Vector2Int borderStartPos = blockStartPos + new Vector2Int(t, -1);
+                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
+                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
+                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
+                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
+
+                borders.BorderDown.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
+            }
+
+            // left border
+            for (int t = 0; t < BLOCK_SIZE; t++)
+            {
+                Vector2Int borderStartPos = blockStartPos + new Vector2Int(-1, t);
+                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
+                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
+                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
+                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
+
+                borders.BorderLeft.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
+            }
+
+            // right border
+            for (int t = 0; t < BLOCK_SIZE; t++)
+            {
+                Vector2Int borderStartPos = blockStartPos + new Vector2Int(BLOCK_SIZE, t);
+                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
+                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
+                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
+                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
+
+                borders.BorderRight.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
+            }
+
+
+            return borders;
+        }
+
+        private void UpdateChunksFromBlock(Vector2Int chunkPos, int layer, WfcState wfcState,
+            Dictionary<int, int> wfcGlobalsModuleIndexToKey)
+        {
+            int offsetX = BlockOffsets[layer].x;
+            int offsetY = BlockOffsets[layer].y;
+
+            for (int x = 0; x < BLOCK_SIZE; x++)
+            {
+                for (int y = 0; y < BLOCK_SIZE; y++)
+                {
+                    int localX = x + offsetX;
+                    int localY = y + offsetY;
+
+                    int neighborDX = 0, neighborDY = 0;
+
+                    if (localX < 0)
+                    {
+                        neighborDX = -1;
+                        localX += CHUNK_SIZE;
+                    }
+                    else if (localX >= CHUNK_SIZE)
+                    {
+                        neighborDX = 1;
+                        localX -= CHUNK_SIZE;
+                    }
+
+                    if (localY < 0)
+                    {
+                        neighborDY = -1;
+                        localY += CHUNK_SIZE;
+                    }
+                    else if (localY >= CHUNK_SIZE)
+                    {
+                        neighborDY = 1;
+                        localY -= CHUNK_SIZE;
+                    }
+
+                    Vector2Int targetChunk = new Vector2Int(chunkPos.x + neighborDX, chunkPos.y + neighborDY);
+                    int localPosition = localX + localY * CHUNK_SIZE;
+                    int output = wfcState.Output[x + y * BLOCK_SIZE];
+
+                    _loadedChunks[targetChunk][localPosition] = output >= 0 ? wfcGlobalsModuleIndexToKey[output] : 0;
+                }
+            }
+        }
+
+        public (Vector2Int chunk, Vector2Int localTile) GetChunkAndLocalTilePositionFromTile(Vector2Int tilePos)
+        {
+            int chunkX = (int)Math.Floor((double)tilePos.x / CHUNK_SIZE);
+            int chunkY = (int)Math.Floor((double)tilePos.y / CHUNK_SIZE);
+
+            int localX = ((tilePos.x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            int localY = ((tilePos.y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+            return (new Vector2Int(chunkX, chunkY), new Vector2Int(localX, localY));
+        }
 
         private void SaveChunk(Vector2Int chunkCoord, int[] tiles)
         {
@@ -469,6 +666,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
+
         private Vector2Int GetPlayerChunk(Vector3 playerWorldPos)
         {
             var tilePosition = TargetTilemap.WorldToCell(playerWorldPos);
@@ -482,19 +680,13 @@ namespace MagusStudios.WaveFunctionCollapse
         /// current stage of generation (1 through 4)
         /// </summary>
         /// <returns></returns>
-        private string GetChunkLayersPath()
+        private string GetAllGeneratedBlocksPath()
         {
             string fileName = "chunk_layers.dat";
             return Path.Combine(_chunkDirectory, fileName);
         }
 
-        private string GetPregeneratedChunksPath()
-        {
-            string fileName = "pregenerated_chunks.dat";
-            return Path.Combine(_chunkDirectory, fileName);
-        }
-
-        public static void SaveChunkLayers(Dictionary<Vector2Int, byte> chunkLayers, string path)
+        public static void SaveAllGeneratedBlocksDict(Dictionary<Vector2Int, byte> chunkLayers, string path)
         {
             using (BinaryWriter writer = new BinaryWriter(File.Open(path, FileMode.Create)))
             {
@@ -533,40 +725,31 @@ namespace MagusStudios.WaveFunctionCollapse
             return chunkLayers;
         }
 
-        public static HashSet<Vector2Int> LoadPregeneratedChunks(string path)
+        // used for testing
+        void PrintHashSetArray(HashSet<Vector2Int>[] array)
         {
-            HashSet<Vector2Int> pregeneratedChunks = new HashSet<Vector2Int>();
-
-            if (!File.Exists(path))
-                return pregeneratedChunks;
-
-            using (BinaryReader reader = new BinaryReader(File.Open(path, FileMode.Open)))
+            if (array == null)
             {
-                int count = reader.ReadInt32();
-
-                for (int i = 0; i < count; i++)
-                {
-                    int x = reader.ReadInt32();
-                    int y = reader.ReadInt32();
-
-                    pregeneratedChunks.Add(new Vector2Int(x, y));
-                }
+                Debug.Log("Array is null");
+                return;
             }
 
-            return pregeneratedChunks;
-        }
-
-        public static void SavePregeneratedChunks(string path, HashSet<Vector2Int> pregeneratedChunks)
-        {
-            using (BinaryWriter writer = new BinaryWriter(File.Open(path, FileMode.Create)))
+            for (int i = 0; i < array.Length; i++)
             {
-                writer.Write(pregeneratedChunks.Count);
-
-                foreach (Vector2Int chunk in pregeneratedChunks)
+                if (array[i] == null)
                 {
-                    writer.Write(chunk.x);
-                    writer.Write(chunk.y);
+                    Debug.Log($"[{i}]: null");
+                    continue;
                 }
+
+                if (array[i].Count == 0)
+                {
+                    Debug.Log($"[{i}]: (empty)");
+                    continue;
+                }
+
+                string entries = string.Join(", ", array[i]);
+                Debug.Log($"[{i}]: {{ {entries} }}");
             }
         }
     }

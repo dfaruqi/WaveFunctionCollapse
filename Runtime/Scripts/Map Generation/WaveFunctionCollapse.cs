@@ -216,8 +216,6 @@ namespace MagusStudios.WaveFunctionCollapse
                             Flag = WfcJob.State.OK
                         };
 
-                        wfcState.Job = wfc;
-
                         jobHandles.Add(wfc.Schedule());
                     }
                 }
@@ -247,12 +245,6 @@ namespace MagusStudios.WaveFunctionCollapse
                         int startY = blockY * blockSize.y - 1;
 
                         WfcState wfcState = stateGrid[blockX, blockY];
-
-                        if (wfcState.Job.Flag == WfcJob.State.ERROR)
-                        {
-                            Debug.Log(
-                                $"[{nameof(WaveFunctionCollapse)}] Error in generation for block {blockX},{blockY}");
-                        }
 
                         for (int i = 0; i < (trueBlockWidth) * (trueBlockHeight); i++)
                         {

@@ -16,9 +16,7 @@ namespace MagusStudios.WaveFunctionCollapse
         public readonly NativeArray<int> DownBorder;
         public readonly NativeArray<int> LeftBorder;
         public readonly NativeArray<int> RightBorder;
-
-        public WfcJob Job;
-
+        
         public WfcState(Vector2Int size, int moduleCount, WfcUtils.Borders borders = default)
         {
             int cellCount = size.x * size.y;
@@ -39,7 +37,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
             }
-
+            
             // domains
             NativeArray<WfcJob.Cell> cells = new NativeArray<WfcJob.Cell>(cellCount, Allocator.Persistent);
 

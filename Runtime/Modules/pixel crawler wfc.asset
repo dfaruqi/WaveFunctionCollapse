@@ -283,7 +283,7 @@ MonoBehaviour:
               serializedList: 08000000
           - Key: 2
             Value:
-              serializedList: 0e0000002a00000011000000
+              serializedList: 0e0000002a000000
           - Key: 3
             Value:
               serializedList: 0e00000010000000120000001d000000
@@ -320,7 +320,7 @@ MonoBehaviour:
               serializedList: 000000000300000014000000
           - Key: 3
             Value:
-              serializedList: 0e000000150000000f00000029000000
+              serializedList: 0e0000001500000029000000
     - Key: 18
       Value:
         weight: 1
@@ -396,7 +396,7 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 1b00000026000000
+              serializedList: 1b000000
           - Key: 1
             Value:
               serializedList: 0e0000000f000000
@@ -430,7 +430,7 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 1d0000001f00000022000000
+              serializedList: 1d0000001f000000
           - Key: 1
             Value:
               serializedList: 11000000
@@ -447,7 +447,7 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 1e00000025000000
+              serializedList: 1e000000
           - Key: 1
             Value:
               serializedList: 12000000
@@ -603,7 +603,7 @@ MonoBehaviour:
               serializedList: 000000000600000005000000
           - Key: 1
             Value:
-              serializedList: 1f0000002300000018000000
+              serializedList: 1f00000023000000
           - Key: 2
             Value:
               serializedList: 0000000014000000
@@ -654,7 +654,7 @@ MonoBehaviour:
               serializedList: 000000000400000005000000
           - Key: 1
             Value:
-              serializedList: 1e0000002400000019000000
+              serializedList: 1e00000024000000
           - Key: 2
             Value:
               serializedList: 24000000260000002c000000
@@ -671,7 +671,7 @@ MonoBehaviour:
               serializedList: 0000000005000000
           - Key: 1
             Value:
-              serializedList: 1b00000016000000
+              serializedList: 1b000000
           - Key: 2
             Value:
               serializedList: 2200000026000000240000002c000000
