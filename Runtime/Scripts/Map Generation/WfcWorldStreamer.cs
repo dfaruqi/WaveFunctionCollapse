@@ -3,8 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Numerics;
-using System.Threading.Tasks;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
 using Unity.Jobs;
@@ -252,30 +250,13 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // - Update Tilemap - 
 
-            // draw chunks that are within the draw distance and were affected by generation or are not drawn
-            foreach (Vector2Int chunkPos in chunksInDrawDistance)
-            {
-                if (!_drawnChunks.Contains(chunkPos) || chunksAffectedByGeneration.Contains(chunkPos))
-                {
-                    TileBase[] tileBases = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
-
-                    for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
-                    {
-                        tileBases[i] =
-                            _moduleSet.TileDatabase.Tiles
-                                [_loadedChunks[chunkPos][i]]; // todo maybe put some rails on all this access?
-                    }
-
-                    Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
-                    BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
-
-                    TargetTilemap.SetTilesBlock(bounds, tileBases);
-
-                    _drawnChunks.Add(chunkPos);
-
-                    yield return null;
-                }
-            }
+            // get all chunks within draw distance that are not drawn or should be redrawn because generation affected
+            // them (at the edges)
+            HashSet<Vector2Int> chunksToDraw =
+                new HashSet<Vector2Int>(chunksInDrawDistance.Where(x =>
+                    !_drawnChunks.Contains(x) ||
+                    chunksAffectedByGeneration.Contains(x)));
+            yield return StartCoroutine(DrawChunks(chunksToDraw));
 
             // un-draw chunks that are drawn and outside draw distance
             GetChunksOutsideDistance(playerChunkPosition, drawDistance + 1, _drawnChunks,
@@ -296,7 +277,40 @@ namespace MagusStudios.WaveFunctionCollapse
             // - Log -
 
             Debug.Log(
-                $"{nameof(WfcWorldStreamer)} Chunk Updates - \n   loaded/generated: {unloadedChunksInLoadDistance.Count}]\n   unloaded: {chunksToUnload.Count})");
+                $"{nameof(WfcWorldStreamer)} Chunk Updates - \n" +
+                $"   loaded/generated: {unloadedChunksInLoadDistance.Count}]\n" +
+                $"   unloaded: {chunksToUnload.Count})\n" +
+                $"   drawn: {chunksToDraw.Count}");
+        }
+
+        /// <summary>
+        /// Assumes all chunks passed in are loaded.
+        /// </summary>
+        /// <param name="chunks"></param>
+        /// <returns></returns>
+        private IEnumerator DrawChunks(HashSet<Vector2Int> chunks)
+        {
+            // draw chunks that are within the draw distance and were affected by generation or are not drawn
+            foreach (Vector2Int chunkPos in chunks)
+            {
+                TileBase[] tileBases = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
+
+                for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
+                {
+                    int tile = _loadedChunks[chunkPos][i];
+
+                    if (tile < 0) tileBases[i] = null;
+                    else tileBases[i] = _moduleSet.TileDatabase.Tiles[tile];
+                }
+
+                Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
+                BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
+
+                TargetTilemap.SetTilesBlock(bounds, tileBases);
+
+                _drawnChunks.Add(chunkPos);
+                yield return null;
+            }
         }
 
         private IEnumerator GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
@@ -361,12 +375,12 @@ namespace MagusStudios.WaveFunctionCollapse
                 // Update the affected loaded chunks--the changes will be needed for future passes
                 foreach (KeyValuePair<Vector2Int, WfcState> kvp in stateDict)
                 {
-                    Vector2Int pos = kvp.Key;
+                    Vector2Int chunkPosition = kvp.Key;
                     WfcState wfcState = kvp.Value;
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
-                    //if (!HasErrorInOutput(wfcState.Output))
-                    UpdateChunksFromBlock(pos, pass, wfcState, wfcGlobals.moduleIndexToKey);
+                    if (HasErrorInOutput(wfcState.Output)) Debug.Log("error in chunk " + chunkPosition);
+                    UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey, _moduleSet.DefaultTileKey);
 
                     // clean up state
                     wfcState.Dispose();
@@ -580,8 +594,8 @@ namespace MagusStudios.WaveFunctionCollapse
             return borders;
         }
 
-        private void UpdateChunksFromBlock(Vector2Int chunkPos, int layer, WfcState wfcState,
-            Dictionary<int, int> wfcGlobalsModuleIndexToKey)
+        private void UpdateChunksFromBlock(Vector2Int chunkPos, int layer, NativeArray<int> wfcOutput,
+            Dictionary<int, int> wfcGlobalsModuleIndexToKey, int defaultTileKey)
         {
             int offsetX = BlockOffsets[layer].x;
             int offsetY = BlockOffsets[layer].y;
@@ -619,9 +633,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
                     Vector2Int targetChunk = new Vector2Int(chunkPos.x + neighborDX, chunkPos.y + neighborDY);
                     int localPosition = localX + localY * CHUNK_SIZE;
-                    int output = wfcState.Output[x + y * BLOCK_SIZE];
+                    int output = wfcOutput[x + y * BLOCK_SIZE];
 
-                    _loadedChunks[targetChunk][localPosition] = output >= 0 ? wfcGlobalsModuleIndexToKey[output] : 0;
+                    _loadedChunks[targetChunk][localPosition] = output >= 0 ? wfcGlobalsModuleIndexToKey[output] : defaultTileKey;
                 }
             }
         }
