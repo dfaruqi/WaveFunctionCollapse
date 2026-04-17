@@ -17,9 +17,9 @@ namespace MagusStudios.WaveFunctionCollapse
         public Dictionary<int, int> moduleIndexToKey;
         public NativeArray<Direction> directions;
 
-        public WfcGlobals(WfcModuleSet moduleSet)
+        public WfcGlobals(WfcTemplate template)
         {
-            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
+            SerializedDictionary<int, WfcTemplate.TileModule> moduleDict = template.TileRules.Modules;
 
             // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
 
@@ -35,13 +35,12 @@ namespace MagusStudios.WaveFunctionCollapse
             // The module set is a dictionary for more flexibility in the editor. Native data does not support dictionaries, however, so we create an
             // ordered array of all modules instead. The indices of this array will be used as the tile ids in the algorithm. We create a mapping
             // of tile id (in the module set) -> index in the ordered array so that the output can be converted back to the module set's editor ids
-            // after generation returns the map
 
             // First, create the mapping
             moduleKeyToIndex = new Dictionary<int, int>();
             moduleIndexToKey = new Dictionary<int, int>();
             int mappingCount = 0;
-            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
             {
                 moduleKeyToIndex[kvp.Key] = mappingCount;
                 moduleIndexToKey[mappingCount] = kvp.Key;
@@ -50,9 +49,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Fill modules and weights
             int moduleCount = 0;
-            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
             {
-                WfcModuleSet.TileModule module = kvp.Value;
+                WfcTemplate.TileModule module = kvp.Value;
                 WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
                 // initialize the module's allowed neighbors to nothing at first
@@ -125,7 +124,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     }
                 }
 
-                Weights.Add(moduleCount, module.weight);
+                template.Weights.TryGetWeight(kvp.Key, out float weight);
+                
+                Weights.Add(moduleCount, weight);
                 Modules.Add(moduleCount, nativeModule);
                 moduleCount++;
             }

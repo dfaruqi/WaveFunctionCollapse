@@ -20,7 +20,7 @@ namespace MagusStudios.WaveFunctionCollapse
     public class WaveFunctionCollapse : MonoBehaviour
     {
         //modules
-        public WfcModuleSet ModuleSet;
+        public WfcTemplate template;
 
         //dimensions (simple)
         public Vector2Int MapSize = new(16, 16);
@@ -85,10 +85,10 @@ namespace MagusStudios.WaveFunctionCollapse
             switch (GenerationMode)
             {
                 case MapGenerationMode.Simple:
-                    map = GenerateMap(ModuleSet, MapSize);
+                    map = GenerateMap(template, MapSize);
                     break;
                 case MapGenerationMode.Chunked:
-                    map = GenerateMapInBlocks(ModuleSet, Blocks, BlockSize);
+                    map = GenerateMapInBlocks(template, Blocks, BlockSize);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -103,25 +103,26 @@ namespace MagusStudios.WaveFunctionCollapse
             stopwatch.Start();
 
             //load the map into the first tilemap found in the scene
-            TileUtils.LoadMapData(tilemap, map, ModuleSet.TileDatabase);
+            TileUtils.LoadMapData(tilemap, map, template.TileDatabase);
 
             stopwatch.Stop();
 
-            Debug.Log($"[{nameof(WaveFunctionCollapse)}] Finished setting tiles on tilemap in {stopwatch.Elapsed} seconds.");
+            Debug.Log(
+                $"[{nameof(WaveFunctionCollapse)}] Finished setting tiles on tilemap in {stopwatch.Elapsed} seconds.");
         }
 
         /// <summary>
         /// [Fast] Generates a map of tile IDs according to the WFC algorithm in blocks. Use for large maps.
         /// </summary>
-        /// <param name="moduleSet">Module set containing allowed neighbor information.</param>
+        /// <param name="template">Module set containing allowed neighbor information.</param>
         /// <param name="size">Size of the map to generate in blocks.</param>
         /// <param name="blockSize">Size of each block in tiles.</param>
         /// <param name="defaultTileKey">The key of the default tile that should initially fill the map. (grass, sand, dirt, etc.)</param>
         /// <returns></returns>
-        public int[,] GenerateMapInBlocks(WfcModuleSet moduleSet, Vector2Int size, Vector2Int blockSize)
+        public int[,] GenerateMapInBlocks(WfcTemplate template, Vector2Int size, Vector2Int blockSize)
         {
             // create algorithm lookup data and state
-            WfcGlobals wfcGlobals = new WfcGlobals(moduleSet);
+            WfcGlobals wfcGlobals = new WfcGlobals(template);
             WfcState[,] stateGrid = new WfcState[size.x, size.y];
 
             //create rng
@@ -168,7 +169,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 for (int i = 0; i < output.GetLength(0); i++)
                 {
-                    output[i, j] = wfcGlobals.moduleKeyToIndex[moduleSet.DefaultTileKey];
+                    output[i, j] = wfcGlobals.moduleKeyToIndex[template.DefaultTileKey];
                 }
             }
 
@@ -184,9 +185,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
                         WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
-                            ModuleSet.Modules.Count,
+                            this.template.TileRules.Modules.Count,
                             GetBorders(output, blockX, blockY, size, blockSize,
-                                wfcGlobals.moduleKeyToIndex[moduleSet.DefaultTileKey]));
+                                wfcGlobals.moduleKeyToIndex[template.DefaultTileKey]));
 
                         // WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
                         //     moduleSet.Modules.Count);
@@ -394,15 +395,15 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <summary>
         /// [Fast] Generates a map of tile IDs according to the WFC algorithm.
         /// </summary>
-        /// <param name="moduleSet">Module set containing allowed neighbor information.</param>
+        /// <param name="template">Module set containing allowed neighbor information.</param>
         /// <param name="mapSize">Size of the map to generate in tiles.</param>
         /// <param name="borders">Optional borders to enforce adjacency along the edges of this map, useful for creating
         ///     larger maps in chunks. </param>
         /// <returns></returns>
         /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum or no tiles. </exception>
-        public int[,] GenerateMap(WfcModuleSet moduleSet, Vector2Int mapSize, WfcUtils.Borders borders = default)
+        public int[,] GenerateMap(WfcTemplate template, Vector2Int mapSize, WfcUtils.Borders borders = default)
         {
-            SerializedDictionary<int, WfcModuleSet.TileModule> moduleDict = moduleSet.Modules;
+            SerializedDictionary<int, WfcTemplate.TileModule> moduleDict = template.TileRules.Modules;
 
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
@@ -445,7 +446,7 @@ namespace MagusStudios.WaveFunctionCollapse
             Dictionary<int, int> moduleKeyToIndex = new Dictionary<int, int>();
             Dictionary<int, int> moduleIndexToKey = new Dictionary<int, int>();
             int mappingCount = 0;
-            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
             {
                 moduleKeyToIndex[kvp.Key] = mappingCount;
                 moduleIndexToKey[mappingCount] = kvp.Key;
@@ -454,9 +455,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Fill modules and weights
             int moduleCount = 0;
-            foreach (KeyValuePair<int, WfcModuleSet.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
             {
-                WfcModuleSet.TileModule module = kvp.Value;
+                WfcTemplate.TileModule module = kvp.Value;
                 WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
                 // initialize the module's allowed neighbors to nothing at first
@@ -529,7 +530,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     }
                 }
 
-                weights.Add(moduleCount, module.weight);
+                weights.Add(moduleCount, template.Weights.TryGetWeight(kvp.Key, out float weight) ? weight : 0);
                 modules.Add(moduleCount, nativeModule);
                 moduleCount++;
             }

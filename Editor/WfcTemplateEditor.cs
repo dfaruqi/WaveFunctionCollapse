@@ -9,46 +9,42 @@ using UnityEngine.Tilemaps;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-
-    [CustomEditor(typeof(WfcModuleSet))]
-    public class WfcModuleSetEditor : Editor
+    [CustomEditor(typeof(WfcTemplate))]
+    public class WfcTemplateEditor : Editor
     {
-        private WfcModuleSet moduleSet;
+        private WfcTemplate _template;
         private Vector2 scrollPosition;
         private SerializedProperty tileDatabaseProperty;
+        private SerializedProperty tileRulesProperty;
         private SerializedProperty defaultTileIdProperty;
+        private SerializedProperty weightsProperty;
+
+        private Dictionary<int, bool> neighborFoldouts = new Dictionary<int, bool>();
 
         private void OnEnable()
         {
-            moduleSet = (WfcModuleSet)target;
+            _template = (WfcTemplate)target;
             defaultTileIdProperty = serializedObject.FindProperty("DefaultTileKey");
+            tileRulesProperty = serializedObject.FindProperty("TileRules");
             tileDatabaseProperty = serializedObject.FindProperty("TileDatabase");
+            weightsProperty = serializedObject.FindProperty("Weights");
         }
 
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
 
-            // Draw TileDatabase field manually
-            if (tileDatabaseProperty != null)
-            {
-                EditorGUILayout.PropertyField(tileDatabaseProperty);
-            }
-            else
-            {
-                // Fallback: use default property drawing but exclude Modules
-                DrawPropertiesExcluding(serializedObject, "Modules");
-            }
-
+            EditorGUILayout.PropertyField(tileDatabaseProperty);
             EditorGUILayout.Space();
-            
+            EditorGUILayout.PropertyField(tileRulesProperty);
+            EditorGUILayout.Space();
+            EditorGUILayout.PropertyField(weightsProperty);
+            EditorGUILayout.Space();
             EditorGUILayout.PropertyField(defaultTileIdProperty);
-            
             EditorGUILayout.Space();
 
             if (GUILayout.Button("Scan Active Tilemap and Overwrite"))
             {
-                // Get the first tilemap in the scene
                 Tilemap targetTilemap = FindFirstObjectByType<Tilemap>(FindObjectsInactive.Exclude);
 
                 if (targetTilemap == null)
@@ -57,23 +53,26 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
                 else
                 {
-                    moduleSet.ScanTilemapAndOverwrite(targetTilemap);
-                    EditorUtility.SetDirty(moduleSet);
+                    _template.ScanTilemapAndOverwrite(targetTilemap);
+                    EditorUtility.SetDirty(_template);
                 }
             }
 
             EditorGUILayout.Space();
 
-            if (moduleSet.Modules == null || moduleSet.Modules.Count == 0)
+            if (_template.TileRules == null || _template.TileRules.Modules.Count == 0)
             {
                 EditorGUILayout.HelpBox("No modules defined.", MessageType.Info);
                 serializedObject.ApplyModifiedProperties();
                 return;
             }
 
-            if (moduleSet.TileDatabase == null)
+            SerializedDictionary<int, WfcTemplate.TileModule> modules = _template.TileRules.Modules;
+
+            if (_template.TileDatabase == null)
             {
-                EditorGUILayout.HelpBox("Tile Database is not assigned. Please assign a TileDatabase to view sprites.", MessageType.Warning);
+                EditorGUILayout.HelpBox("Tile Database is not assigned. Please assign a TileDatabase to view sprites.",
+                    MessageType.Warning);
             }
 
             EditorGUILayout.LabelField("Tile Modules", EditorStyles.boldLabel);
@@ -82,16 +81,12 @@ namespace MagusStudios.WaveFunctionCollapse
 
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
 
-            // Create a list of keys first to avoid modifying during iteration
-            List<int> keys = new List<int>(moduleSet.Modules.Keys);
+            List<int> keys = new List<int>(modules.Keys);
 
             foreach (int tileKey in keys)
             {
-                if (DrawTileModule(tileKey, moduleSet.Modules[tileKey]))
-                {
+                if (DrawTileModule(tileKey, modules[tileKey]))
                     wasModified = true;
-                }
-                EditorGUILayout.Space();
             }
 
             EditorGUILayout.EndScrollView();
@@ -99,50 +94,58 @@ namespace MagusStudios.WaveFunctionCollapse
             serializedObject.ApplyModifiedProperties();
 
             if (wasModified)
-            {
-                EditorUtility.SetDirty(moduleSet);
-            }
+                EditorUtility.SetDirty(_template);
         }
 
-        private bool DrawTileModule(int tileKey, WfcModuleSet.TileModule module)
+        private bool DrawTileModule(int tileKey, WfcTemplate.TileModule module)
         {
             bool modified = false;
 
+            if (!neighborFoldouts.ContainsKey(tileKey))
+                neighborFoldouts[tileKey] = false;
+
             EditorGUILayout.BeginVertical("box");
 
-            // Header section
             EditorGUILayout.BeginHorizontal();
 
-            // Tile info
+            // Left: foldout + weight
             EditorGUILayout.BeginVertical();
-            EditorGUILayout.LabelField($"Tile Key: {tileKey}", EditorStyles.boldLabel);
 
-            // Weight field - direct modification with undo
-            EditorGUI.BeginChangeCheck();
-            float newWeight = EditorGUILayout.FloatField("Weight", module.weight);
-            if (EditorGUI.EndChangeCheck())
+            neighborFoldouts[tileKey] = EditorGUILayout.Foldout(
+                neighborFoldouts[tileKey],
+                $"Tile Key: {tileKey}",
+                true,
+                EditorStyles.foldoutHeader
+            );
+
+            if (_template.Weights != null)
             {
-                Undo.RecordObject(moduleSet, "Modify Tile Weight");
-                moduleSet.Modules[tileKey] = new WfcModuleSet.TileModule
+                EditorGUI.BeginChangeCheck();
+                bool weightAssigned = _template.Weights.TryGetWeight(tileKey, out float weight);
+                string weightLabel = weightAssigned ? "Weight" : "Weight (none assigned)";
+                float newWeight = EditorGUILayout.FloatField(weightLabel, weight);
+
+                if (EditorGUI.EndChangeCheck())
                 {
-                    weight = newWeight,
-                    compatibleNeighbors = module.compatibleNeighbors
-                };
-                modified = true;
+                    Undo.RecordObject(_template, "Modify Tile Weight");
+                    _template.Weights[tileKey] = newWeight;
+                    modified = true;
+                }
             }
 
             EditorGUILayout.EndVertical();
 
-            // Sprite preview
+            // Right: sprite preview + name
             DrawSpritePreview(tileKey);
 
             EditorGUILayout.EndHorizontal();
 
-            // Compatible neighbors with sprites
-            EditorGUILayout.Space();
-            if (module.compatibleNeighbors != null)
+            if (neighborFoldouts[tileKey] && module.compatibleNeighbors != null)
             {
+                EditorGUILayout.Space();
+                EditorGUI.indentLevel++;
                 DrawCompatibleNeighborsWithSprites(module.compatibleNeighbors);
+                EditorGUI.indentLevel--;
             }
 
             EditorGUILayout.EndVertical();
@@ -152,21 +155,18 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void DrawSpritePreview(int tileKey)
         {
-            if (moduleSet.TileDatabase == null) return;
+            if (_template.TileDatabase == null) return;
 
-            if (moduleSet.TileDatabase.TryGetTile(tileKey, out Tile tile))
+            if (_template.TileDatabase.TryGetTile(tileKey, out Tile tile))
             {
                 if (tile.sprite != null)
                 {
                     Texture2D texture = AssetPreview.GetAssetPreview(tile.sprite);
                     if (texture != null)
-                    {
                         GUILayout.Label(texture, GUILayout.Width(40), GUILayout.Height(40));
-                    }
                     else
-                    {
                         GUILayout.Label("Loading...", GUILayout.Width(40), GUILayout.Height(40));
-                    }
+
                     EditorGUILayout.LabelField(tile.sprite.name, GUILayout.Width(100));
                 }
                 else
@@ -180,10 +180,9 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void DrawCompatibleNeighborsWithSprites(SerializedDictionary<Direction, SerializedHashSet<int>> compatibleNeighbors)
+        private void DrawCompatibleNeighborsWithSprites(
+            SerializedDictionary<Direction, SerializedHashSet<int>> compatibleNeighbors)
         {
-            EditorGUILayout.LabelField("Allowed Neighbors:", EditorStyles.miniBoldLabel);
-
             foreach (Direction direction in System.Enum.GetValues(typeof(Direction)))
             {
                 if (!compatibleNeighbors.ContainsKey(direction)) continue;
@@ -192,43 +191,30 @@ namespace MagusStudios.WaveFunctionCollapse
                 if (compatibleTiles == null || compatibleTiles.Count == 0) continue;
 
                 EditorGUILayout.BeginVertical("box");
-
-                // Direction label
                 EditorGUILayout.LabelField($"{direction}:", EditorStyles.miniLabel);
 
-                // Calculate flexible layout
                 int spriteCount = compatibleTiles.Count;
                 int maxSpritesPerRow = Mathf.Max(1, Mathf.FloorToInt(EditorGUIUtility.currentViewWidth / 45f));
                 int rowsNeeded = Mathf.CeilToInt((float)spriteCount / maxSpritesPerRow);
 
-                // Draw sprites in flexible rows
                 int currentIndex = 0;
                 for (int row = 0; row < rowsNeeded; row++)
                 {
                     EditorGUILayout.BeginHorizontal();
 
-                    // Calculate how many sprites in this row
                     int spritesThisRow = Mathf.Min(maxSpritesPerRow, spriteCount - currentIndex);
-
-                    // Add flexible space to center if needed
                     GUILayout.FlexibleSpace();
 
-                    // Draw sprites for this row
                     for (int i = 0; i < spritesThisRow; i++)
                     {
                         DrawSmallNeighborSprite(compatibleTiles[currentIndex]);
                         currentIndex++;
 
-                        // Add spacing except for the last sprite
                         if (i < spritesThisRow - 1)
-                        {
                             GUILayout.Space(5);
-                        }
                     }
 
-                    // Add flexible space to center if needed
                     GUILayout.FlexibleSpace();
-
                     EditorGUILayout.EndHorizontal();
                 }
 
@@ -238,39 +224,32 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void DrawSmallNeighborSprite(int tileKey)
         {
-            if (moduleSet.TileDatabase == null) return;
+            if (_template.TileDatabase == null) return;
 
-            if (moduleSet.TileDatabase.TryGetTile(tileKey, out Tile tile))
+            if (_template.TileDatabase.TryGetTile(tileKey, out Tile tile))
             {
                 if (tile.sprite != null)
                 {
                     Texture2D texture = AssetPreview.GetAssetPreview(tile.sprite);
                     if (texture != null)
                     {
-                        // Small compact preview with tooltip
                         GUIContent content = new GUIContent(texture, $"{tileKey}: {tile.sprite.name}");
                         GUILayout.Label(content, GUILayout.Width(40), GUILayout.Height(40));
                     }
                     else
                     {
-                        // Fallback: show just the key in a small box
                         GUILayout.Box(tileKey.ToString(), GUILayout.Width(40), GUILayout.Height(40));
                     }
                 }
                 else
                 {
-                    // No sprite - show key in a small box
                     GUILayout.Box(tileKey.ToString(), GUILayout.Width(40), GUILayout.Height(40));
                 }
             }
             else
             {
-                // Tile not found
                 GUILayout.Box("?", GUILayout.Width(40), GUILayout.Height(40));
             }
         }
-
-        
-
     }
 }

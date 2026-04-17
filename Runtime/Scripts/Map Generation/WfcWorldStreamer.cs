@@ -21,7 +21,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         [SerializeField] int drawDistance = 1;
 
-        [SerializeField] private WfcModuleSet _moduleSet;
+        [SerializeField] private WfcTemplate template;
 
         // ~ Constants ~
 
@@ -300,7 +300,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     int tile = _loadedChunks[chunkPos][i];
 
                     if (tile < 0) tileBases[i] = null;
-                    else tileBases[i] = _moduleSet.TileDatabase.Tiles[tile];
+                    else tileBases[i] = template.TileDatabase.Tiles[tile];
                 }
 
                 Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
@@ -319,7 +319,7 @@ namespace MagusStudios.WaveFunctionCollapse
             Dictionary<Vector2Int, WfcState> stateDict = new();
 
             // Create the globals for wfc
-            WfcGlobals wfcGlobals = new WfcGlobals(_moduleSet);
+            WfcGlobals wfcGlobals = new WfcGlobals(template);
             // todo when biomes are added, one of these will be needed for each module set
 
             // generate the chunks in 4 passes using the modifying-in-blocks approach
@@ -330,7 +330,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     // get the border information for this block from loaded chunks
                     WfcUtils.Borders borders = GetBordersOfBlock(chunk, pass, wfcGlobals.moduleKeyToIndex);
                     WfcState wfcState = new WfcState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
-                        _moduleSet.Modules.Count, borders);
+                        template.TileRules.Modules.Count, borders);
 
                     // add to state dict to keep track of this run of wfc
                     stateDict.Add(chunk, wfcState);
@@ -380,7 +380,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
                     if (HasErrorInOutput(wfcState.Output)) Debug.Log("error in chunk " + chunkPosition);
-                    UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey, _moduleSet.DefaultTileKey);
+                    UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey, template.DefaultTileKey);
 
                     // clean up state
                     wfcState.Dispose();
@@ -451,7 +451,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int[] grass = new int[size];
                 for (int i = 0; i < size; i++)
                 {
-                    grass[i] = _moduleSet.DefaultTileKey;
+                    grass[i] = template.DefaultTileKey;
                 }
 
                 _loadedChunks.Add(chunkPos, grass);

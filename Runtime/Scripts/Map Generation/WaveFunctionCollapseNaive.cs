@@ -14,24 +14,24 @@ namespace MagusStudios.WaveFunctionCollapse
     public class WaveFunctionCollapseNaive : MonoBehaviour
     {
         //modules
-        public WfcModuleSet ModuleSet;
+        public WfcTemplate template;
 
         //dimensions
         public Vector2Int MapSize = new(10, 10);
-        
+
         //randomization
         public int Seed;
-        
+
         //animation
         [SerializeField] int animatedPassesPerSecond = 16;
         [SerializeField] bool animate;
         [SerializeField] bool showDomains;
-        
+
         private System.Random random;
-        
+
         private Tilemap tilemap;
         private TilemapNumberOverlay _debugOverlay;
-        
+
         public delegate void CellConstrainedHandler(Vector2Int pos, int domainSize);
 
         private void Start()
@@ -52,17 +52,17 @@ namespace MagusStudios.WaveFunctionCollapse
 
             tilemap = tilemaps[0];
         }
-        
+
         public void GenerateFromEditor()
         {
             if (!Application.IsPlaying(this)) return;
-            
+
             StopAllCoroutines();
-            
+
             GetFirstTilemapInScene();
             GenerateMapAnimated(tilemap);
         }
-        
+
         private void GenerateMapAnimated(Tilemap tilemap)
         {
             StartCoroutine(GenerateMapAnimatedCoroutine(tilemap));
@@ -71,12 +71,14 @@ namespace MagusStudios.WaveFunctionCollapse
         public IEnumerator GenerateMapAnimatedCoroutine(Tilemap tilemap)
         {
             Debug.Log(
-                $"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {ModuleSet.name} and seed {Seed}");
+                $"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {template.name} and seed {Seed}");
 
             //prepare data needed for algorithm
-            var modules = ModuleSet.Modules;
+            var modules = template.TileRules.Modules;
             int[] allTileIDs = modules.Keys.ToArray();
-            var weights = modules.ToDictionary(m => m.Key, m => m.Value.weight);
+            var weights = modules.ToDictionary(
+                m => m.Key,
+                m => template.Weights.TryGetWeight(m.Key, out float weight) ? weight : 0);
             int width = MapSize.x;
             int height = MapSize.y;
 
@@ -145,7 +147,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     //update the tiles after each pass of the algorithm so you can watch the map generate
                     Vector3Int pos = cell.pos.ToVector3Int();
                     int tileId = cell.Domain[0];
-                    TileBase tile = ModuleSet.TileDatabase.Tiles[tileId];
+                    TileBase tile = template.TileDatabase.Tiles[tileId];
                     tilemap.SetTileDynamic(pos, tile);
                 }
 
@@ -163,11 +165,11 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             //once finished, load the whole map
-            TileUtils.LoadMapData(tilemap, map, ModuleSet.TileDatabase);
+            TileUtils.LoadMapData(tilemap, map, template.TileDatabase);
 
             yield break;
         }
-        
+
         private void UpdateTileDomain(Vector2Int pos, int domainSize)
         {
             _debugOverlay.SetNumber(pos.ToVector3Int(), domainSize);
@@ -290,7 +292,7 @@ namespace MagusStudios.WaveFunctionCollapse
             /// </summary>
             public bool Constrain(IReadOnlyList<int> enforcerDomain,
                 Direction direction,
-                SerializedDictionary<int, WfcModuleSet.TileModule> modules,
+                SerializedDictionary<int, WfcTemplate.TileModule> modules,
                 Dictionary<int, float> weights)
             {
                 bool constrained = false;
@@ -355,7 +357,7 @@ namespace MagusStudios.WaveFunctionCollapse
             /// <param name="modules"></param>
             /// <returns>Is the algorithm done, What cells were collapsed</returns>
             public bool WaveFunctionCollapse(Dictionary<int, float> weights,
-                SerializedDictionary<int, WfcModuleSet.TileModule> modules,
+                SerializedDictionary<int, WfcTemplate.TileModule> modules,
                 ref List<Cell> cellsCollapsed,
                 System.Random random,
                 CellConstrainedHandler cellConstrainedHandler = null)
