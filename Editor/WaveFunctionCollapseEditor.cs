@@ -24,7 +24,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void OnEnable()
         {
-            moduleSet = serializedObject.FindProperty("ModuleSet");
+            moduleSet = serializedObject.FindProperty("Template");
             mapSize = serializedObject.FindProperty("MapSize");
             seed = serializedObject.FindProperty("Seed");
             generationMode = serializedObject.FindProperty("GenerationMode");

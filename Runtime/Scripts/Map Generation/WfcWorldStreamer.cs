@@ -35,7 +35,7 @@ namespace MagusStudios.WaveFunctionCollapse
         // size of generated blocks, which are later converted to chunks. Must satisfy the following:
         // BLOCKSIZE is even and BLOCK_SIZE < CHUNK_SIZE and BLOCK_SIZE > CHUNK_SIZE / 2
         // suggestions: 12,24,36,48
-        private const int BLOCK_SIZE = 36;
+        private const int BLOCK_SIZE = 32;
 
         // ~ State ~
 
@@ -379,8 +379,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     WfcState wfcState = kvp.Value;
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
-                    if (HasErrorInOutput(wfcState.Output)) Debug.Log("error in chunk " + chunkPosition);
-                    UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey, template.DefaultTileKey);
+                    if (!HasErrorInOutput(wfcState.Output)) // Debug.Log("error in chunk " + chunkPosition);
+                        UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey,
+                            template.DefaultTileKey);
 
                     // clean up state
                     wfcState.Dispose();
@@ -523,7 +524,7 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         /// <summary>
-        /// Get Borders of this block in key-space
+        /// Get Borders of this block in index-space
         /// </summary>
         /// <param name="chunk"></param>
         /// <param name="blockLayer"></param>
@@ -635,7 +636,8 @@ namespace MagusStudios.WaveFunctionCollapse
                     int localPosition = localX + localY * CHUNK_SIZE;
                     int output = wfcOutput[x + y * BLOCK_SIZE];
 
-                    _loadedChunks[targetChunk][localPosition] = output >= 0 ? wfcGlobalsModuleIndexToKey[output] : defaultTileKey;
+                    _loadedChunks[targetChunk][localPosition] =
+                        output >= 0 ? wfcGlobalsModuleIndexToKey[output] : defaultTileKey;
                 }
             }
         }

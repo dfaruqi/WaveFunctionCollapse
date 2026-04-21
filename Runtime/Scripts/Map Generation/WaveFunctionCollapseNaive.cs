@@ -292,7 +292,7 @@ namespace MagusStudios.WaveFunctionCollapse
             /// </summary>
             public bool Constrain(IReadOnlyList<int> enforcerDomain,
                 Direction direction,
-                SerializedDictionary<int, WfcTemplate.TileModule> modules,
+                SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules,
                 Dictionary<int, float> weights)
             {
                 bool constrained = false;
@@ -302,7 +302,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 HashSet<int> valid = new HashSet<int>();
                 foreach (int id in enforcerDomain)
                 {
-                    foreach (int key in modules[id].compatibleNeighbors[direction])
+                    foreach (int key in modules[id].Neighbors[direction])
                     {
                         valid.Add(key);
                     }
@@ -357,7 +357,7 @@ namespace MagusStudios.WaveFunctionCollapse
             /// <param name="modules"></param>
             /// <returns>Is the algorithm done, What cells were collapsed</returns>
             public bool WaveFunctionCollapse(Dictionary<int, float> weights,
-                SerializedDictionary<int, WfcTemplate.TileModule> modules,
+                SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules,
                 ref List<Cell> cellsCollapsed,
                 System.Random random,
                 CellConstrainedHandler cellConstrainedHandler = null)

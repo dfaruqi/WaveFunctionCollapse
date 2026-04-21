@@ -150,7 +150,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4951fbec6792624bb9b55520f3a9a47, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ModuleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
+  Template: {fileID: 0}
   MapSize: {x: 64, y: 64}
   Blocks: {x: 4, y: 4}
   BlockSize: {x: 32, y: 32}
@@ -198,7 +198,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 177c6a108ed075d4ea1c54d3b130a266, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ModuleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
+  template: {fileID: 0}
   MapSize: {x: 48, y: 48}
   Seed: 765479609
   animatedPassesPerSecond: 16
@@ -4184,7 +4184,7 @@ MonoBehaviour:
   TargetTilemap: {fileID: 1617837638}
   Seed: 0
   drawDistance: 1
-  _moduleSet: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
+  template: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
 --- !u!4 &769089728
 Transform:
   m_ObjectHideFlags: 0

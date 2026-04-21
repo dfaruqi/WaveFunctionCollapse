@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3a71f7551dc2e3d42889ad47c05cf189, type: 3}
-  m_Name: pixel crawler database
+  m_Name: pixel crawler tile database
   m_EditorClassIdentifier: 
   Tiles:
     _serializedList:

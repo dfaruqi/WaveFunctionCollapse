@@ -19,7 +19,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         public WfcGlobals(WfcTemplate template)
         {
-            SerializedDictionary<int, WfcTemplate.TileModule> moduleDict = template.TileRules.Modules;
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
             // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
 
@@ -40,7 +40,7 @@ namespace MagusStudios.WaveFunctionCollapse
             moduleKeyToIndex = new Dictionary<int, int>();
             moduleIndexToKey = new Dictionary<int, int>();
             int mappingCount = 0;
-            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
             {
                 moduleKeyToIndex[kvp.Key] = mappingCount;
                 moduleIndexToKey[mappingCount] = kvp.Key;
@@ -49,9 +49,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Fill modules and weights
             int moduleCount = 0;
-            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
             {
-                WfcTemplate.TileModule module = kvp.Value;
+                WfcTileRules.AllowedNeighbors module = kvp.Value;
                 WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
                 // initialize the module's allowed neighbors to nothing at first
@@ -65,7 +65,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 nativeModule.allowedRight1 = 0;
 
                 // UP
-                foreach (int v in module.compatibleNeighbors[Direction.Up])
+                foreach (int v in module.Neighbors[Direction.Up])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 
@@ -80,7 +80,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 // DOWN
-                foreach (int v in module.compatibleNeighbors[Direction.Down])
+                foreach (int v in module.Neighbors[Direction.Down])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 
@@ -95,7 +95,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 // LEFT
-                foreach (int v in module.compatibleNeighbors[Direction.Left])
+                foreach (int v in module.Neighbors[Direction.Left])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 
@@ -110,7 +110,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 // RIGHT
-                foreach (int v in module.compatibleNeighbors[Direction.Right])
+                foreach (int v in module.Neighbors[Direction.Right])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 

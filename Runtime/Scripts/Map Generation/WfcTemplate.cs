@@ -9,14 +9,7 @@ namespace MagusStudios.WaveFunctionCollapse
     [CreateAssetMenu(fileName = "WfcModuleSet", menuName = "Wave Function Collapse/WfcTemplate")]
     public class WfcTemplate : ScriptableObject
     {
-        /// <summary>
-        /// One module refers to one tile asset and its domain of compatible adjacent tiles for each direction up down left right
-        /// </summary>
-        [System.Serializable]
-        public struct TileModule
-        {
-            public SerializedDictionary<Direction, SerializedHashSet<int>> compatibleNeighbors;
-        }
+        
 
         public TileDatabase TileDatabase;
         public WfcTileRules TileRules;
@@ -32,8 +25,8 @@ namespace MagusStudios.WaveFunctionCollapse
                 Debug.LogError($"[{nameof(WfcTemplate)}] Tile Database is null. Aborting.");
             }
 
-            SerializedDictionary<int, WfcTemplate.TileModule> newModules =
-                new SerializedDictionary<int, WfcTemplate.TileModule>();
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> newModules =
+                new SerializedDictionary<int, WfcTileRules.AllowedNeighbors>();
 
             //for each position in the tilemap
             foreach (var pos in tilemap.cellBounds.allPositionsWithin)
@@ -53,14 +46,14 @@ namespace MagusStudios.WaveFunctionCollapse
                 //store a new constraint module for this tile if we have not encountered it yet
                 if (!newModules.TryGetValue(tileKey, out var module))
                 {
-                    module = new WfcTemplate.TileModule
+                    module = new WfcTileRules.AllowedNeighbors()
                     {
-                        compatibleNeighbors = new SerializedDictionary<Direction, SerializedHashSet<int>>()
+                        Neighbors = new SerializedDictionary<Direction, SerializedHashSet<int>>()
                     };
-                    module.compatibleNeighbors[Direction.Up] = new SerializedHashSet<int>();
-                    module.compatibleNeighbors[Direction.Down] = new SerializedHashSet<int>();
-                    module.compatibleNeighbors[Direction.Left] = new SerializedHashSet<int>();
-                    module.compatibleNeighbors[Direction.Right] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Up] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Down] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Left] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Right] = new SerializedHashSet<int>();
                     newModules.Add(tileKey, module);
                 }
 
@@ -75,7 +68,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         return;
                     }
 
-                    newModules[tileKey].compatibleNeighbors[direction].Add(neighborTileKey);
+                    newModules[tileKey].Neighbors[direction].Add(neighborTileKey);
                 }
 
                 newModules[tileKey] = module;
@@ -93,7 +86,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 Debug.LogError($"[{nameof(WfcTemplate)}] Tile Database is null. Aborting.");
             }
 
-            SerializedDictionary<int, TileModule> newModules = new SerializedDictionary<int, TileModule>();
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> newModules = new SerializedDictionary<int, WfcTileRules.AllowedNeighbors>();
 
             //for each position in the tilemap
             foreach (var pos in tilemap.cellBounds.allPositionsWithin)
@@ -113,14 +106,14 @@ namespace MagusStudios.WaveFunctionCollapse
                 //store a new constraint module for this tile if we have not encountered it yet
                 if (!newModules.TryGetValue(tileKey, out var module))
                 {
-                    module = new TileModule
+                    module = new WfcTileRules.AllowedNeighbors
                     {
-                        compatibleNeighbors = new SerializedDictionary<Direction, SerializedHashSet<int>>()
+                        Neighbors = new SerializedDictionary<Direction, SerializedHashSet<int>>()
                     };
-                    module.compatibleNeighbors[Direction.Up] = new SerializedHashSet<int>();
-                    module.compatibleNeighbors[Direction.Down] = new SerializedHashSet<int>();
-                    module.compatibleNeighbors[Direction.Left] = new SerializedHashSet<int>();
-                    module.compatibleNeighbors[Direction.Right] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Up] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Down] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Left] = new SerializedHashSet<int>();
+                    module.Neighbors[Direction.Right] = new SerializedHashSet<int>();
                     newModules.Add(tileKey, module);
                 }
 
@@ -136,7 +129,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         return;
                     }
 
-                    newModules[tileKey].compatibleNeighbors[direction].Add(neighborTileKey);
+                    newModules[tileKey].Neighbors[direction].Add(neighborTileKey);
                 }
 
                 newModules[tileKey] = module;

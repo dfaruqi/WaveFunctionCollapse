@@ -20,7 +20,7 @@ namespace MagusStudios.WaveFunctionCollapse
     public class WaveFunctionCollapse : MonoBehaviour
     {
         //modules
-        public WfcTemplate template;
+        public WfcTemplate Template;
 
         //dimensions (simple)
         public Vector2Int MapSize = new(16, 16);
@@ -85,10 +85,10 @@ namespace MagusStudios.WaveFunctionCollapse
             switch (GenerationMode)
             {
                 case MapGenerationMode.Simple:
-                    map = GenerateMap(template, MapSize);
+                    map = GenerateMap(Template, MapSize);
                     break;
                 case MapGenerationMode.Chunked:
-                    map = GenerateMapInBlocks(template, Blocks, BlockSize);
+                    map = GenerateMapInBlocks(Template, Blocks, BlockSize);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -103,7 +103,7 @@ namespace MagusStudios.WaveFunctionCollapse
             stopwatch.Start();
 
             //load the map into the first tilemap found in the scene
-            TileUtils.LoadMapData(tilemap, map, template.TileDatabase);
+            TileUtils.LoadMapData(tilemap, map, Template.TileDatabase);
 
             stopwatch.Stop();
 
@@ -185,7 +185,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
                         WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
-                            this.template.TileRules.Modules.Count,
+                            this.Template.TileRules.Modules.Count,
                             GetBorders(output, blockX, blockY, size, blockSize,
                                 wfcGlobals.moduleKeyToIndex[template.DefaultTileKey]));
 
@@ -403,7 +403,7 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum or no tiles. </exception>
         public int[,] GenerateMap(WfcTemplate template, Vector2Int mapSize, WfcUtils.Borders borders = default)
         {
-            SerializedDictionary<int, WfcTemplate.TileModule> moduleDict = template.TileRules.Modules;
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
             // First, check that the module set does not have too many tiles
             if (moduleDict.Count >= MAXIMUM_TILES)
@@ -446,7 +446,7 @@ namespace MagusStudios.WaveFunctionCollapse
             Dictionary<int, int> moduleKeyToIndex = new Dictionary<int, int>();
             Dictionary<int, int> moduleIndexToKey = new Dictionary<int, int>();
             int mappingCount = 0;
-            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
             {
                 moduleKeyToIndex[kvp.Key] = mappingCount;
                 moduleIndexToKey[mappingCount] = kvp.Key;
@@ -455,9 +455,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Fill modules and weights
             int moduleCount = 0;
-            foreach (KeyValuePair<int, WfcTemplate.TileModule> kvp in moduleDict)
+            foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
             {
-                WfcTemplate.TileModule module = kvp.Value;
+                WfcTileRules.AllowedNeighbors module = kvp.Value;
                 WfcJob.AllowedNeighborModule nativeModule = new WfcJob.AllowedNeighborModule();
 
                 // initialize the module's allowed neighbors to nothing at first
@@ -471,7 +471,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 nativeModule.allowedRight1 = 0;
 
                 // UP
-                foreach (int v in module.compatibleNeighbors[Direction.Up])
+                foreach (int v in module.Neighbors[Direction.Up])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 
@@ -486,7 +486,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 // DOWN
-                foreach (int v in module.compatibleNeighbors[Direction.Down])
+                foreach (int v in module.Neighbors[Direction.Down])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 
@@ -501,7 +501,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 // LEFT
-                foreach (int v in module.compatibleNeighbors[Direction.Left])
+                foreach (int v in module.Neighbors[Direction.Left])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 
@@ -516,7 +516,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 // RIGHT
-                foreach (int v in module.compatibleNeighbors[Direction.Right])
+                foreach (int v in module.Neighbors[Direction.Right])
                 {
                     int compatibleNeighborIndex = moduleKeyToIndex[v];
 

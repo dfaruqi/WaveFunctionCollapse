@@ -9,15 +9,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38d23cffc4a91bf4c85f66dc3220977e, type: 3}
-  m_Name: pixel crawler wfc
+  m_Script: {fileID: 11500000, guid: 7dbdf7013f0047f7b5b67cdc42bddb48, type: 3}
+  m_Name: pixel crawler tile rules
   m_EditorClassIdentifier: 
-  TileDatabase: {fileID: 11400000, guid: d1044e963cd325249b647dec7116b323, type: 2}
   Modules:
     _serializedList:
     - Key: 0
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -33,7 +32,7 @@ MonoBehaviour:
               serializedList: 000000000100000004000000070000001100000013000000180000001f000000220000002d000000
     - Key: 1
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -49,7 +48,7 @@ MonoBehaviour:
               serializedList: 0200000020000000
     - Key: 2
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -65,7 +64,7 @@ MonoBehaviour:
               serializedList: 030000000200000020000000
     - Key: 3
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -81,7 +80,7 @@ MonoBehaviour:
               serializedList: 00000000110000001f000000
     - Key: 4
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -97,7 +96,7 @@ MonoBehaviour:
               serializedList: 050000000a000000
     - Key: 5
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -113,7 +112,7 @@ MonoBehaviour:
               serializedList: 05000000060000000a000000
     - Key: 6
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -129,7 +128,7 @@ MonoBehaviour:
               serializedList: 00000000180000001f000000
     - Key: 7
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -145,7 +144,7 @@ MonoBehaviour:
               serializedList: 080000000d00000027000000
     - Key: 8
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -161,7 +160,7 @@ MonoBehaviour:
               serializedList: 08000000090000001d00000027000000
     - Key: 9
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -177,7 +176,7 @@ MonoBehaviour:
               serializedList: 0000000013000000
     - Key: 10
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -193,7 +192,7 @@ MonoBehaviour:
               serializedList: 0b000000
     - Key: 11
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -209,7 +208,7 @@ MonoBehaviour:
               serializedList: 0b0000000c0000001400000021000000
     - Key: 12
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -225,7 +224,7 @@ MonoBehaviour:
               serializedList: 0600000005000000
     - Key: 13
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -241,7 +240,7 @@ MonoBehaviour:
               serializedList: 0e00000029000000
     - Key: 14
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -257,7 +256,7 @@ MonoBehaviour:
               serializedList: 0f00000029000000
     - Key: 15
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -273,7 +272,7 @@ MonoBehaviour:
               serializedList: 0e00000010000000120000001d000000
     - Key: 16
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -289,7 +288,7 @@ MonoBehaviour:
               serializedList: 09000000
     - Key: 17
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -305,7 +304,7 @@ MonoBehaviour:
               serializedList: 0e0000001500000029000000
     - Key: 18
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -321,7 +320,7 @@ MonoBehaviour:
               serializedList: 000000000100000013000000
     - Key: 19
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -337,7 +336,7 @@ MonoBehaviour:
               serializedList: 0b000000
     - Key: 20
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -353,7 +352,7 @@ MonoBehaviour:
               serializedList: 000000000700000011000000180000001f00000022000000
     - Key: 21
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -369,7 +368,7 @@ MonoBehaviour:
               serializedList: 160000001b000000
     - Key: 22
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -385,7 +384,7 @@ MonoBehaviour:
               serializedList: 1600000017000000190000001a0000001b000000
     - Key: 23
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -401,7 +400,7 @@ MonoBehaviour:
               serializedList: 12000000
     - Key: 24
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -417,7 +416,7 @@ MonoBehaviour:
               serializedList: 160000001a0000001b000000
     - Key: 25
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -433,7 +432,7 @@ MonoBehaviour:
               serializedList: 000000000400000013000000
     - Key: 26
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -449,7 +448,7 @@ MonoBehaviour:
               serializedList: 1b000000
     - Key: 27
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -465,7 +464,7 @@ MonoBehaviour:
               serializedList: 1b0000001c0000001e00000024000000160000001900000017000000
     - Key: 28
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -481,7 +480,7 @@ MonoBehaviour:
               serializedList: 1900000016000000
     - Key: 29
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -497,7 +496,7 @@ MonoBehaviour:
               serializedList: 1b000000
     - Key: 30
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -513,7 +512,7 @@ MonoBehaviour:
               serializedList: 08000000000000000e000000130000000100000004000000
     - Key: 31
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -529,7 +528,7 @@ MonoBehaviour:
               serializedList: 1b000000
     - Key: 32
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -545,7 +544,7 @@ MonoBehaviour:
               serializedList: 0b000000
     - Key: 33
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -561,7 +560,7 @@ MonoBehaviour:
               serializedList: 0300000002000000
     - Key: 34
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -577,7 +576,7 @@ MonoBehaviour:
               serializedList: 23000000260000002b000000
     - Key: 35
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -593,7 +592,7 @@ MonoBehaviour:
               serializedList: 1b000000
     - Key: 36
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -609,7 +608,7 @@ MonoBehaviour:
               serializedList: 2500000026000000
     - Key: 37
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -625,7 +624,7 @@ MonoBehaviour:
               serializedList: 0000000013000000
     - Key: 38
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -641,7 +640,7 @@ MonoBehaviour:
               serializedList: 2600000025000000230000002b000000
     - Key: 39
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -657,7 +656,7 @@ MonoBehaviour:
               serializedList: 28000000
     - Key: 40
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -673,7 +672,7 @@ MonoBehaviour:
               serializedList: 0800000009000000
     - Key: 41
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -689,7 +688,7 @@ MonoBehaviour:
               serializedList: 2a000000
     - Key: 42
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -705,7 +704,7 @@ MonoBehaviour:
               serializedList: 0f0000001200000010000000
     - Key: 43
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -721,7 +720,7 @@ MonoBehaviour:
               serializedList: 2c000000
     - Key: 44
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -737,7 +736,7 @@ MonoBehaviour:
               serializedList: 2600000025000000
     - Key: 45
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -753,7 +752,7 @@ MonoBehaviour:
               serializedList: 2e000000
     - Key: 46
       Value:
-        compatibleNeighbors:
+        Neighbors:
           _serializedList:
           - Key: 0
             Value:
@@ -767,5 +766,3 @@ MonoBehaviour:
           - Key: 3
             Value:
               serializedList: 00000000
-  Weights: {fileID: 11400000, guid: 59bc5e504aff7bd4cbe38f98ebbea3b1, type: 2}
-  DefaultTileKey: 0

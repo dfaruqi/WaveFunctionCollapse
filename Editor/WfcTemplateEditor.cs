@@ -55,6 +55,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     _template.ScanTilemapAndOverwrite(targetTilemap);
                     EditorUtility.SetDirty(_template);
+                    EditorUtility.SetDirty(_template.TileRules);
                 }
             }
 
@@ -67,7 +68,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 return;
             }
 
-            SerializedDictionary<int, WfcTemplate.TileModule> modules = _template.TileRules.Modules;
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = _template.TileRules.Modules;
 
             if (_template.TileDatabase == null)
             {
@@ -97,7 +98,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 EditorUtility.SetDirty(_template);
         }
 
-        private bool DrawTileModule(int tileKey, WfcTemplate.TileModule module)
+        private bool DrawTileModule(int tileKey, WfcTileRules.AllowedNeighbors module)
         {
             bool modified = false;
 
@@ -127,8 +128,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 if (EditorGUI.EndChangeCheck())
                 {
-                    Undo.RecordObject(_template, "Modify Tile Weight");
+                    Undo.RecordObject(_template.Weights, "Modify Tile Weight");
                     _template.Weights[tileKey] = newWeight;
+                    EditorUtility.SetDirty(_template.Weights);
                     modified = true;
                 }
             }
@@ -140,11 +142,11 @@ namespace MagusStudios.WaveFunctionCollapse
 
             EditorGUILayout.EndHorizontal();
 
-            if (neighborFoldouts[tileKey] && module.compatibleNeighbors != null)
+            if (neighborFoldouts[tileKey] && module.Neighbors != null)
             {
                 EditorGUILayout.Space();
                 EditorGUI.indentLevel++;
-                DrawCompatibleNeighborsWithSprites(module.compatibleNeighbors);
+                DrawCompatibleNeighborsWithSprites(module.Neighbors);
                 EditorGUI.indentLevel--;
             }
 
