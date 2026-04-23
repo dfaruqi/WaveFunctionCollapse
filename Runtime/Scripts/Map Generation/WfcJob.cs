@@ -692,6 +692,7 @@ namespace MagusStudios.WaveFunctionCollapse
             ulong constrainedMask0 = cell.domainMask0;
             ulong constrainedMask1 = cell.domainMask1;
 
+            // constrain
             constrainedMask0 &= allowedMask0;
             constrainedMask1 &= allowedMask1;
 

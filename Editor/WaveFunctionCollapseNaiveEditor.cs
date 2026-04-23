@@ -20,7 +20,7 @@ namespace MagusStudios.WaveFunctionCollapse
         
         private void OnEnable()
         {
-            moduleSet = serializedObject.FindProperty("ModuleSet");
+            moduleSet = serializedObject.FindProperty("Template");
             mapSize = serializedObject.FindProperty("MapSize");
             animatedPassesPerSecond = serializedObject.FindProperty("animatedPassesPerSecond");
             animate = serializedObject.FindProperty("animate");

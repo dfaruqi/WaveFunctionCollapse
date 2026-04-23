@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AYellowpaper.SerializedCollections;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
 using Unity.Jobs;
@@ -20,7 +21,7 @@ namespace MagusStudios.WaveFunctionCollapse
         public uint Seed;
 
         [SerializeField] int drawDistance = 1;
-
+        [SerializeField] bool clearOnStart = true;
         [SerializeField] private WfcTemplate template;
 
         // ~ Constants ~
@@ -35,7 +36,7 @@ namespace MagusStudios.WaveFunctionCollapse
         // size of generated blocks, which are later converted to chunks. Must satisfy the following:
         // BLOCKSIZE is even and BLOCK_SIZE < CHUNK_SIZE and BLOCK_SIZE > CHUNK_SIZE / 2
         // suggestions: 12,24,36,48
-        private const int BLOCK_SIZE = 32;
+        private const int BLOCK_SIZE = 36;
 
         // ~ State ~
 
@@ -90,6 +91,8 @@ namespace MagusStudios.WaveFunctionCollapse
             BlockOffsets[2] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, blockGap / 2);
             BlockOffsets[3] = new Vector2Int(blockGap / 2, blockGap / 2);
 
+            if (!clearOnStart) return;
+
             TargetTilemap.ClearAllTiles();
             TargetTilemap.RefreshAllTiles();
         }
@@ -103,26 +106,6 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             StopAllCoroutines();
         }
-
-        // private void Update()
-        // {
-        //     // return if no jobs scheduled
-        //     if (_jobHandles.Count <= 0) return;
-        //
-        //     bool allJobsComplete = true;
-        //     // return if jobs scheduled but any are still running
-        //     for (int i = _jobHandles.Count - 1; i >= 0; i--)
-        //     {
-        //         if (_jobHandles[i].IsCompleted)
-        //             _jobHandles.RemoveAt(i);
-        //         else allJobsComplete = false;
-        //     }
-        //
-        //     if (!allJobsComplete) return;
-        //
-        //     // if all scheduled jobs are complete, clear the list
-        //     _jobHandles.Clear();
-        // }
 
         private IEnumerator StreamWorld()
         {
@@ -379,7 +362,12 @@ namespace MagusStudios.WaveFunctionCollapse
                     WfcState wfcState = kvp.Value;
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
-                    if (!HasErrorInOutput(wfcState.Output)) // Debug.Log("error in chunk " + chunkPosition);
+
+                    bool error = IsValidOutput(wfcState.Output, template);
+                    if (error)
+                        Debug.LogWarning("error in chunk " + chunkPosition);
+
+                    if (!error)
                         UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey,
                             template.DefaultTileKey);
 
@@ -513,14 +501,39 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
 
-        private bool HasErrorInOutput(NativeArray<int> output)
+        private bool IsValidOutput(NativeArray<int> output, WfcTemplate template)
         {
-            foreach (int value in output)
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = template.TileRules.Modules;
+
+            for (int i = 0; i < output.Length; i++)
             {
-                if (value < 0) return true;
+                int value = output[i];
+
+                if (value < 0) return false;
+
+                if (!modules.ContainsKey(value))
+                {
+                    Debug.LogError($"[{nameof(WfcWorldStreamer)}] tile in output not found in template");
+                    return false;
+                }
+                
+                int x = i % BLOCK_SIZE;
+                int y = i / BLOCK_SIZE;
+
+                if (x > 0 && !modules[output[i - 1]].Neighbors[Direction.Left].Contains(value))
+                    return false;
+
+                if (x < BLOCK_SIZE - 1 && !modules[output[i + 1]].Neighbors[Direction.Right].Contains(value))
+                    return false;
+
+                if (y > 0 && !modules[output[i - BLOCK_SIZE]].Neighbors[Direction.Down].Contains(value))
+                    return false;
+
+                if (y < BLOCK_SIZE - 1 && !modules[output[i + BLOCK_SIZE]].Neighbors[Direction.Up].Contains(value))
+                    return false;
             }
 
-            return false;
+            return true;
         }
 
         /// <summary>

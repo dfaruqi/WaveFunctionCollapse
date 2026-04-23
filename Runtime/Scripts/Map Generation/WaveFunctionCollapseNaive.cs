@@ -14,7 +14,7 @@ namespace MagusStudios.WaveFunctionCollapse
     public class WaveFunctionCollapseNaive : MonoBehaviour
     {
         //modules
-        public WfcTemplate template;
+        public WfcTemplate Template;
 
         //dimensions
         public Vector2Int MapSize = new(10, 10);
@@ -71,14 +71,14 @@ namespace MagusStudios.WaveFunctionCollapse
         public IEnumerator GenerateMapAnimatedCoroutine(Tilemap tilemap)
         {
             Debug.Log(
-                $"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {template.name} and seed {Seed}");
+                $"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {Template.name} and seed {Seed}");
 
             //prepare data needed for algorithm
-            var modules = template.TileRules.Modules;
+            var modules = Template.TileRules.Modules;
             int[] allTileIDs = modules.Keys.ToArray();
             var weights = modules.ToDictionary(
                 m => m.Key,
-                m => template.Weights.TryGetWeight(m.Key, out float weight) ? weight : 0);
+                m => Template.Weights.TryGetWeight(m.Key, out float weight) ? weight : 0);
             int width = MapSize.x;
             int height = MapSize.y;
 
@@ -147,7 +147,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     //update the tiles after each pass of the algorithm so you can watch the map generate
                     Vector3Int pos = cell.pos.ToVector3Int();
                     int tileId = cell.Domain[0];
-                    TileBase tile = template.TileDatabase.Tiles[tileId];
+                    TileBase tile = Template.TileDatabase.Tiles[tileId];
                     tilemap.SetTileDynamic(pos, tile);
                 }
 
@@ -165,7 +165,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             //once finished, load the whole map
-            TileUtils.LoadMapData(tilemap, map, template.TileDatabase);
+            TileUtils.LoadMapData(tilemap, map, Template.TileDatabase);
 
             yield break;
         }

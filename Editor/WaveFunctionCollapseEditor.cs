@@ -16,10 +16,8 @@ namespace MagusStudios.WaveFunctionCollapse
         SerializedProperty blocks;
         SerializedProperty blockSize;
 
-        bool autoRandomize = true;
-
+        private bool autoRandomize = true;
         private uint timeSeed = 1;
-
         private Unity.Mathematics.Random random;
 
         private void OnEnable()
