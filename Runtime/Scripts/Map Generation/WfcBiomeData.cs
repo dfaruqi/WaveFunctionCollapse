@@ -1,7 +1,10 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using AYellowpaper.SerializedCollections;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
+using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
@@ -9,15 +12,14 @@ namespace MagusStudios.WaveFunctionCollapse
     /// Contains state needed for Wave Function Collapse. WfcGlobals are read-only and can be shared by
     /// multiple parallel runs.
     /// </summary>
-    public class WfcGlobals
+    public class WfcBiomeData
     {
         public NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> Modules;
-        public NativeParallelHashMap<int, float> Weights;
         public Dictionary<int, int> moduleKeyToIndex;
         public Dictionary<int, int> moduleIndexToKey;
         public NativeArray<Direction> directions;
 
-        public WfcGlobals(WfcTemplate template)
+        public WfcBiomeData(WfcTemplate template)
         {
             SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
@@ -26,9 +28,6 @@ namespace MagusStudios.WaveFunctionCollapse
             // modules (stored as an array of module structs, which contain masks defining allowed tiles in each direction)
             Modules = new NativeParallelHashMap<int, WfcJob.AllowedNeighborModule>(moduleDict.Count,
                 Allocator.Persistent);
-
-            // weights
-            Weights = new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
 
             // - initialize modules and weights -
 
@@ -48,7 +47,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             // Fill modules and weights
-            int moduleCount = 0;
+            int moduleIndex = 0;
             foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
             {
                 WfcTileRules.AllowedNeighbors module = kvp.Value;
@@ -126,9 +125,8 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 template.Weights.TryGetWeight(kvp.Key, out float weight);
                 
-                Weights.Add(moduleCount, weight);
-                Modules.Add(moduleCount, nativeModule);
-                moduleCount++;
+                Modules.Add(moduleIndex, nativeModule);
+                moduleIndex++;
             }
 
             // A flattened area of all permutations of four directions, precomputed and for use in generation for when
@@ -139,7 +137,6 @@ namespace MagusStudios.WaveFunctionCollapse
         public void Dispose()
         {
             Modules.Dispose();
-            Weights.Dispose();
             directions.Dispose();
         }
     }

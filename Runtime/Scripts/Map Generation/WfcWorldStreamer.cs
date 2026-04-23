@@ -299,10 +299,10 @@ namespace MagusStudios.WaveFunctionCollapse
         private IEnumerator GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
         {
             // create a dictionary to track all the wave function collapse runs
-            Dictionary<Vector2Int, WfcState> stateDict = new();
+            Dictionary<Vector2Int, WfcBlockState> stateDict = new();
 
             // Create the globals for wfc
-            WfcGlobals wfcGlobals = new WfcGlobals(template);
+            WfcBiomeData wfcBiomeData = new WfcBiomeData(template);
             // todo when biomes are added, one of these will be needed for each module set
 
             // generate the chunks in 4 passes using the modifying-in-blocks approach
@@ -310,35 +310,36 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 foreach (Vector2Int chunk in blocksToGenerate[pass])
                 {
+                    // Create rng
+                    Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, pass));
+                    
                     // get the border information for this block from loaded chunks
-                    WfcUtils.Borders borders = GetBordersOfBlock(chunk, pass, wfcGlobals.moduleKeyToIndex);
-                    WfcState wfcState = new WfcState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
-                        template.TileRules.Modules.Count, borders);
+                    WfcUtils.Borders borders = GetBordersOfBlock(chunk, pass, wfcBiomeData.moduleKeyToIndex);
+                    WfcBlockState wfcBlockState = new WfcBlockState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
+                        template.TileRules.Modules.Count, template, rng, borders);
 
                     // add to state dict to keep track of this run of wfc
-                    stateDict.Add(chunk, wfcState);
-
-                    Unity.Mathematics.Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, pass));
+                    stateDict.Add(chunk, wfcBlockState);
 
                     // === Create and schedule the job ===
                     WfcJob wfc = new WfcJob
                     {
-                        Modules = wfcGlobals.Modules,
-                        Weights = wfcGlobals.Weights,
-                        Cells = wfcState.Cells,
-                        AllDirectionPermutations = wfcGlobals.directions,
-                        UpBorder = wfcState.UpBorder,
-                        DownBorder = wfcState.DownBorder,
-                        LeftBorder = wfcState.LeftBorder,
-                        RightBorder = wfcState.RightBorder,
-                        EntropyHeap = wfcState.EntropyHeap,
-                        EntropyIndices = wfcState.EntropyIndices,
+                        Modules = wfcBiomeData.Modules,
+                        Weights = wfcBlockState.Weights,
+                        Cells = wfcBlockState.Cells,
+                        AllDirectionPermutations = wfcBiomeData.directions,
+                        UpBorder = wfcBlockState.UpBorder,
+                        DownBorder = wfcBlockState.DownBorder,
+                        LeftBorder = wfcBlockState.LeftBorder,
+                        RightBorder = wfcBlockState.RightBorder,
+                        EntropyHeap = wfcBlockState.EntropyHeap,
+                        EntropyIndices = wfcBlockState.EntropyIndices,
                         random = rng,
-                        PropagationStack = wfcState.PropagationStack,
+                        PropagationStack = wfcBlockState.PropagationStack,
                         PropagationStackTop = 0,
                         Width = BLOCK_SIZE,
                         Height = BLOCK_SIZE,
-                        Output = wfcState.Output,
+                        Output = wfcBlockState.Output,
                         Flag = WfcJob.State.OK
                     };
 
@@ -356,23 +357,23 @@ namespace MagusStudios.WaveFunctionCollapse
                 _jobHandles.Clear();
 
                 // Update the affected loaded chunks--the changes will be needed for future passes
-                foreach (KeyValuePair<Vector2Int, WfcState> kvp in stateDict)
+                foreach (KeyValuePair<Vector2Int, WfcBlockState> kvp in stateDict)
                 {
                     Vector2Int chunkPosition = kvp.Key;
-                    WfcState wfcState = kvp.Value;
+                    WfcBlockState wfcBlockState = kvp.Value;
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
 
-                    bool error = IsValidOutput(wfcState.Output, template);
+                    bool error = IsValidOutput(wfcBlockState.Output, template);
                     if (error)
                         Debug.LogWarning("error in chunk " + chunkPosition);
 
                     if (!error)
-                        UpdateChunksFromBlock(chunkPosition, pass, wfcState.Output, wfcGlobals.moduleIndexToKey,
+                        UpdateChunksFromBlock(chunkPosition, pass, wfcBlockState.Output, wfcBiomeData.moduleIndexToKey,
                             template.DefaultTileKey);
 
                     // clean up state
-                    wfcState.Dispose();
+                    wfcBlockState.Dispose();
                 }
 
                 stateDict.Clear();
@@ -380,7 +381,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // clean up globals
 
-            wfcGlobals.Dispose();
+            wfcBiomeData.Dispose();
         }
 
         private void GetUnloadedChunksInLoadDistance(Vector2Int playerChunkPosition,

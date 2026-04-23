@@ -122,8 +122,8 @@ namespace MagusStudios.WaveFunctionCollapse
         public int[,] GenerateMapInBlocks(WfcTemplate template, Vector2Int size, Vector2Int blockSize)
         {
             // create algorithm lookup data and state
-            WfcGlobals wfcGlobals = new WfcGlobals(template);
-            WfcState[,] stateGrid = new WfcState[size.x, size.y];
+            WfcBiomeData wfcBiomeData = new WfcBiomeData(template);
+            WfcBlockState[,] stateGrid = new WfcBlockState[size.x, size.y];
 
             //create rng
             Random blockSeedGenerator = new Unity.Mathematics.Random(Seed);
@@ -169,7 +169,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 for (int i = 0; i < output.GetLength(0); i++)
                 {
-                    output[i, j] = wfcGlobals.moduleKeyToIndex[template.DefaultTileKey];
+                    output[i, j] = wfcBiomeData.moduleKeyToIndex[template.DefaultTileKey];
                 }
             }
 
@@ -184,36 +184,36 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
-                        WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
-                            this.Template.TileRules.Modules.Count,
+                        WfcBlockState wfcBlockState = new WfcBlockState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
+                            this.Template.TileRules.Modules.Count, template, blockSeedGenerator,
                             GetBorders(output, blockX, blockY, size, blockSize,
-                                wfcGlobals.moduleKeyToIndex[template.DefaultTileKey]));
+                                wfcBiomeData.moduleKeyToIndex[template.DefaultTileKey]));
 
                         // WfcState wfcState = new WfcState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
                         //     moduleSet.Modules.Count);
-                        stateGrid[blockX, blockY] = wfcState;
+                        stateGrid[blockX, blockY] = wfcBlockState;
 
                         Random rng = new Random(blockSeedGenerator.NextUInt());
 
                         // === Create and schedule the job ===
                         WfcJob wfc = new WfcJob
                         {
-                            Modules = wfcGlobals.Modules,
-                            Weights = wfcGlobals.Weights,
-                            Cells = wfcState.Cells,
-                            AllDirectionPermutations = wfcGlobals.directions,
-                            UpBorder = wfcState.UpBorder,
-                            DownBorder = wfcState.DownBorder,
-                            LeftBorder = wfcState.LeftBorder,
-                            RightBorder = wfcState.RightBorder,
-                            EntropyHeap = wfcState.EntropyHeap,
-                            EntropyIndices = wfcState.EntropyIndices,
+                            Modules = wfcBiomeData.Modules,
+                            Weights = wfcBlockState.Weights,
+                            Cells = wfcBlockState.Cells,
+                            AllDirectionPermutations = wfcBiomeData.directions,
+                            UpBorder = wfcBlockState.UpBorder,
+                            DownBorder = wfcBlockState.DownBorder,
+                            LeftBorder = wfcBlockState.LeftBorder,
+                            RightBorder = wfcBlockState.RightBorder,
+                            EntropyHeap = wfcBlockState.EntropyHeap,
+                            EntropyIndices = wfcBlockState.EntropyIndices,
                             random = rng,
-                            PropagationStack = wfcState.PropagationStack,
+                            PropagationStack = wfcBlockState.PropagationStack,
                             PropagationStackTop = 0,
                             Width = blockSize.x + 2,
                             Height = blockSize.y + 2,
-                            Output = wfcState.Output,
+                            Output = wfcBlockState.Output,
                             Flag = WfcJob.State.OK
                         };
 
@@ -245,7 +245,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         int startX = blockX * blockSize.x - 1;
                         int startY = blockY * blockSize.y - 1;
 
-                        WfcState wfcState = stateGrid[blockX, blockY];
+                        WfcBlockState wfcBlockState = stateGrid[blockX, blockY];
 
                         for (int i = 0; i < (trueBlockWidth) * (trueBlockHeight); i++)
                         {
@@ -259,17 +259,17 @@ namespace MagusStudios.WaveFunctionCollapse
                                 continue;
                             }
 
-                            int unconverted = wfcState.Output[i];
+                            int unconverted = wfcBlockState.Output[i];
 
                             output[x + startX, y + startY] = unconverted;
                         }
 
-                        wfcState.Dispose();
+                        wfcBlockState.Dispose();
                     }
                 }
             }
 
-            wfcGlobals.Dispose();
+            wfcBiomeData.Dispose();
 
             // convert output back to keys
 
@@ -278,7 +278,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 for (int i = 0; i < output.GetLength(0); i++)
                 {
                     int tileId = output[i, j];
-                    output[i, j] = tileId < 0 ? -1 : wfcGlobals.moduleIndexToKey[output[i, j]];
+                    output[i, j] = tileId < 0 ? -1 : wfcBiomeData.moduleIndexToKey[output[i, j]];
                 }
             }
 

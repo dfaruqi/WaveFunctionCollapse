@@ -18,12 +18,12 @@ namespace MagusStudios.WaveFunctionCollapse
         [ReadOnly] [NativeDisableParallelForRestriction]
         public NativeParallelHashMap<int, AllowedNeighborModule> Modules;
 
-        // weights
-        [ReadOnly] [NativeDisableParallelForRestriction]
-        public NativeParallelHashMap<int, float> Weights;
-
         [ReadOnly] [NativeDisableParallelForRestriction]
         public NativeArray<Direction> AllDirectionPermutations;
+
+        // weights
+        [ReadOnly]
+        public NativeParallelHashMap<int, float> Weights;
 
         [ReadOnly] public NativeArray<int> UpBorder;
         [ReadOnly] public NativeArray<int> DownBorder;

@@ -1,11 +1,12 @@
 using System.Collections.Generic;
+using AYellowpaper.SerializedCollections;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
 using UnityEngine;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-    public class WfcState
+    public class WfcBlockState
     {
         public readonly NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer> EntropyHeap;
         public readonly NativeArray<NativeHeapIndex> EntropyIndices;
@@ -16,10 +17,22 @@ namespace MagusStudios.WaveFunctionCollapse
         public readonly NativeArray<int> DownBorder;
         public readonly NativeArray<int> LeftBorder;
         public readonly NativeArray<int> RightBorder;
-        
-        public WfcState(Vector2Int size, int moduleCount, WfcUtils.Borders borders = default)
+        public NativeParallelHashMap<int, float> Weights;
+
+        public WfcBlockState(Vector2Int size, int moduleCount, WfcTemplate template, Unity.Mathematics.Random rng, WfcUtils.Borders borders = default)
         {
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
+
             int cellCount = size.x * size.y;
+
+            // weights
+            Weights = new NativeParallelHashMap<int, float>(moduleDict.Count, Allocator.Persistent);
+            int moduleIndex = 0;
+            foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
+            {
+                Weights.Add(moduleIndex, template.Weights[kvp.Key]);
+                moduleIndex++;
+            }
 
             // entropy 
             EntropyHeap =
@@ -37,7 +50,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
             }
-            
+
             // domains
             NativeArray<WfcJob.Cell> cells = new NativeArray<WfcJob.Cell>(cellCount, Allocator.Persistent);
 
@@ -118,6 +131,7 @@ namespace MagusStudios.WaveFunctionCollapse
             DownBorder.Dispose();
             LeftBorder.Dispose();
             RightBorder.Dispose();
+            Weights.Dispose();
         }
     }
 }
