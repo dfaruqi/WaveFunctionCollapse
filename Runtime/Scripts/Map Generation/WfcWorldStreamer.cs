@@ -243,14 +243,17 @@ namespace MagusStudios.WaveFunctionCollapse
                 chunksAffectedByGeneration.Add(chunk);
             }
 
-            // write all chunks that were changed to file 
+            // write all chunks that were changed to file and the all generated chunk positions dict
             List<Task> saveTasks = new List<Task>();
             saveTasks.AddRange(
                 chunksAffectedByGeneration.Select(chunkPos => SaveChunkAsync(chunkPos, _loadedChunks[chunkPos])));
             saveTasks.Add(SaveAllGeneratedBlocksDictAsync(_allGeneratedBlocks, GetAllGeneratedBlocksPath()));
 
-            // write all generated blocks dictionary to file
-            yield return Task.WhenAll(saveTasks);
+            Task saveAll = Task.WhenAll(saveTasks);
+            yield return new WaitUntil(() => saveAll.IsCompleted);
+
+            if (saveAll.IsFaulted)
+                throw saveAll.Exception;
 
             // - Update Tilemap - 
 
