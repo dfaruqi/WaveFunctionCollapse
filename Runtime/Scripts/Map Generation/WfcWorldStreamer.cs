@@ -1,8 +1,10 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using AYellowpaper.SerializedCollections;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
@@ -39,6 +41,9 @@ namespace MagusStudios.WaveFunctionCollapse
         private const int BLOCK_SIZE = 36;
 
         // ~ State ~
+
+        // Initialization (load from file)
+        private bool _initialized = false;
 
         // Chunks currently loaded and their data
         private readonly Dictionary<Vector2Int, int[]> _loadedChunks = new();
@@ -81,9 +86,6 @@ namespace MagusStudios.WaveFunctionCollapse
                 return;
             }
 
-            // load all generated chunk coords
-            _allGeneratedBlocks = LoadChunkLayers(GetAllGeneratedBlocksPath());
-
             // initialize offsets for blocks (global data)
             int blockGap = CHUNK_SIZE - BLOCK_SIZE;
             BlockOffsets[0] = new Vector2Int(blockGap / 2, -CHUNK_SIZE / 2 + blockGap / 2);
@@ -91,10 +93,14 @@ namespace MagusStudios.WaveFunctionCollapse
             BlockOffsets[2] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, blockGap / 2);
             BlockOffsets[3] = new Vector2Int(blockGap / 2, blockGap / 2);
 
-            if (!clearOnStart) return;
+            if (clearOnStart)
+            {
+                TargetTilemap.RefreshAllTiles();
+                TargetTilemap.ClearAllTiles();
+            }
 
-            TargetTilemap.ClearAllTiles();
-            TargetTilemap.RefreshAllTiles();
+            // load all generated chunk coords
+            _ = InitializeAsync();
         }
 
         private void OnEnable()
@@ -107,8 +113,19 @@ namespace MagusStudios.WaveFunctionCollapse
             StopAllCoroutines();
         }
 
+        async Task InitializeAsync()
+        {
+            _allGeneratedBlocks = await LoadChunkLayersAsync(GetAllGeneratedBlocksPath());
+            _initialized = true;
+        }
+        
         private IEnumerator StreamWorld()
         {
+            while (!_initialized)
+            {
+                yield return null;
+            }
+
             while (true)
             {
                 Vector2Int currentChunk = GetPlayerChunk(Target.position);
@@ -135,11 +152,15 @@ namespace MagusStudios.WaveFunctionCollapse
             HashSet<Vector2Int> chunksUnloaded = new HashSet<Vector2Int>();
 
             // load or pre-generate
-            foreach (Vector2Int chunkPos in unloadedChunksInLoadDistance)
-            {
-                LoadOrPregenerateChunk(chunkPos, ref chunksPregenerated);
+            Task loadTask = Task.WhenAll(
+                unloadedChunksInLoadDistance.Select(coord => LoadOrPregenerateChunkAsync(coord, chunksPregenerated))
+            );
+
+            while (!loadTask.IsCompleted)
                 yield return null;
-            }
+
+            if (loadTask.IsFaulted)
+                throw loadTask.Exception;
 
             // - Generate Blocks -
 
@@ -188,6 +209,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // - Update Files -
 
+            // get chunks affected by generation from block dependencies
             HashSet<Vector2Int> chunksAffectedByGeneration = new HashSet<Vector2Int>();
 
             foreach (Vector2Int block in blocksToGenerate[0])
@@ -222,14 +244,13 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             // write all chunks that were changed to file 
-            foreach (Vector2Int chunkPos in chunksAffectedByGeneration)
-            {
-                SaveChunk(chunkPos, _loadedChunks[chunkPos]);
-                yield return null;
-            }
+            List<Task> saveTasks = new List<Task>();
+            saveTasks.AddRange(
+                chunksAffectedByGeneration.Select(chunkPos => SaveChunkAsync(chunkPos, _loadedChunks[chunkPos])));
+            saveTasks.Add(SaveAllGeneratedBlocksDictAsync(_allGeneratedBlocks, GetAllGeneratedBlocksPath()));
 
             // write all generated blocks dictionary to file
-            SaveAllGeneratedBlocksDict(_allGeneratedBlocks, GetAllGeneratedBlocksPath());
+            yield return Task.WhenAll(saveTasks);
 
             // - Update Tilemap - 
 
@@ -312,7 +333,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     // Create rng
                     Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, pass));
-                    
+
                     // get the border information for this block from loaded chunks
                     WfcUtils.Borders borders = GetBordersOfBlock(chunk, pass, wfcBiomeData.moduleKeyToIndex);
                     WfcBlockState wfcBlockState = new WfcBlockState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
@@ -430,13 +451,10 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void LoadOrPregenerateChunk(Vector2Int chunkPos, ref HashSet<Vector2Int> chunksPregenerated)
+        private async Task LoadOrPregenerateChunkAsync(Vector2Int chunkPos, HashSet<Vector2Int> chunksPregenerated)
         {
-            // case: chunk has never been pregenerated -> pregenerate it then load it into _loadedChunks
             if (!_allGeneratedBlocks.ContainsKey(chunkPos))
             {
-                // pre-generate the chunk with grass only
-                // todo any custom pregeneration here
                 int size = CHUNK_SIZE * CHUNK_SIZE;
                 int[] grass = new int[size];
                 for (int i = 0; i < size; i++)
@@ -450,10 +468,9 @@ namespace MagusStudios.WaveFunctionCollapse
                 return;
             }
 
-            // case: chunk exists but not loaded -> load it into _loadedChunks
             if (!_loadedChunks.ContainsKey(chunkPos))
             {
-                _loadedChunks.Add(chunkPos, LoadChunk(chunkPos)); // load from file
+                _loadedChunks.Add(chunkPos, await LoadChunkAsync(chunkPos));
             }
         }
 
@@ -517,7 +534,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     Debug.LogError($"[{nameof(WfcWorldStreamer)}] tile in output not found in template");
                     return false;
                 }
-                
+
                 int x = i % BLOCK_SIZE;
                 int y = i / BLOCK_SIZE;
 
@@ -667,33 +684,29 @@ namespace MagusStudios.WaveFunctionCollapse
             return (new Vector2Int(chunkX, chunkY), new Vector2Int(localX, localY));
         }
 
-        private void SaveChunk(Vector2Int chunkCoord, int[] tiles)
+        private async Task SaveChunkAsync(Vector2Int chunkCoord, int[] tiles)
         {
             string path = Path.Combine(_chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
-            using (BinaryWriter writer = new BinaryWriter(File.Open(path, FileMode.Create)))
-            {
-                for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
-                {
-                    writer.Write(tiles[i]);
-                }
-            }
+            await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
+                bufferSize: 4096, useAsync: true);
+
+            byte[] buffer = new byte[CHUNK_SIZE * CHUNK_SIZE * sizeof(int)];
+            Buffer.BlockCopy(tiles, 0, buffer, 0, buffer.Length);
+            await fs.WriteAsync(buffer);
         }
 
-        private int[] LoadChunk(Vector2Int chunkCoord)
+        private async Task<int[]> LoadChunkAsync(Vector2Int chunkCoord)
         {
             string path = Path.Combine(_chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
-            using (BinaryReader reader = new BinaryReader(File.Open(path, FileMode.Open)))
-            {
-                int size = CHUNK_SIZE * CHUNK_SIZE;
-                int[] tiles = new int[size];
+            await using FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                bufferSize: 4096, useAsync: true);
 
-                for (int i = 0; i < size; i++)
-                {
-                    tiles[i] = reader.ReadInt32();
-                }
+            byte[] buffer = new byte[CHUNK_SIZE * CHUNK_SIZE * sizeof(int)];
+            await fs.ReadAsync(buffer);
 
-                return tiles;
-            }
+            int[] tiles = new int[CHUNK_SIZE * CHUNK_SIZE];
+            Buffer.BlockCopy(buffer, 0, tiles, 0, buffer.Length);
+            return tiles;
         }
 
 
@@ -716,40 +729,50 @@ namespace MagusStudios.WaveFunctionCollapse
             return Path.Combine(_chunkDirectory, fileName);
         }
 
-        public static void SaveAllGeneratedBlocksDict(Dictionary<Vector2Int, byte> chunkLayers, string path)
+        public static async Task SaveAllGeneratedBlocksDictAsync(Dictionary<Vector2Int, byte> chunkLayers, string path)
         {
-            using (BinaryWriter writer = new BinaryWriter(File.Open(path, FileMode.Create)))
-            {
-                writer.Write(chunkLayers.Count);
+            int count = chunkLayers.Count;
+            byte[] buffer = new byte[sizeof(int) + count * (sizeof(int) * 2 + sizeof(byte))];
 
-                foreach (var pair in chunkLayers)
-                {
-                    writer.Write(pair.Key.x);
-                    writer.Write(pair.Key.y);
-                    writer.Write(pair.Value);
-                }
+            int offset = 0;
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset), count);
+            offset += sizeof(int);
+
+            foreach (var pair in chunkLayers)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset), pair.Key.x);
+                offset += sizeof(int);
+                BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset), pair.Key.y);
+                offset += sizeof(int);
+                buffer[offset++] = pair.Value;
             }
+
+            await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
+                bufferSize: 4096, useAsync: true);
+            await fs.WriteAsync(buffer);
         }
 
-        public static Dictionary<Vector2Int, byte> LoadChunkLayers(string path)
+        public static async Task<Dictionary<Vector2Int, byte>> LoadChunkLayersAsync(string path)
         {
             Dictionary<Vector2Int, byte> chunkLayers = new Dictionary<Vector2Int, byte>();
 
             if (!File.Exists(path))
                 return chunkLayers;
 
-            using (BinaryReader reader = new BinaryReader(File.Open(path, FileMode.Open)))
+            byte[] buffer = await File.ReadAllBytesAsync(path);
+
+            using MemoryStream ms = new MemoryStream(buffer);
+            using BinaryReader reader = new BinaryReader(ms);
+
+            int count = reader.ReadInt32();
+
+            for (int i = 0; i < count; i++)
             {
-                int count = reader.ReadInt32();
+                int x = reader.ReadInt32();
+                int y = reader.ReadInt32();
+                byte layersGenerated = reader.ReadByte();
 
-                for (int i = 0; i < count; i++)
-                {
-                    int x = reader.ReadInt32();
-                    int y = reader.ReadInt32();
-                    byte layersGenerated = reader.ReadByte();
-
-                    chunkLayers[new Vector2Int(x, y)] = layersGenerated;
-                }
+                chunkLayers[new Vector2Int(x, y)] = layersGenerated;
             }
 
             return chunkLayers;
