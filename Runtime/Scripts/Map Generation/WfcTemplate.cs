@@ -9,8 +9,6 @@ namespace MagusStudios.WaveFunctionCollapse
     [CreateAssetMenu(fileName = "WfcModuleSet", menuName = "Wave Function Collapse/WfcTemplate")]
     public class WfcTemplate : ScriptableObject
     {
-        
-
         public TileDatabase TileDatabase;
         public WfcTileRules TileRules;
         public WfcWeights Weights;
@@ -86,7 +84,8 @@ namespace MagusStudios.WaveFunctionCollapse
                 Debug.LogError($"[{nameof(WfcTemplate)}] Tile Database is null. Aborting.");
             }
 
-            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> newModules = new SerializedDictionary<int, WfcTileRules.AllowedNeighbors>();
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> newModules =
+                new SerializedDictionary<int, WfcTileRules.AllowedNeighbors>();
 
             //for each position in the tilemap
             foreach (var pos in tilemap.cellBounds.allPositionsWithin)

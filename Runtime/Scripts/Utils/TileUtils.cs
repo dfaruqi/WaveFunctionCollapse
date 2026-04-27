@@ -9,6 +9,8 @@ namespace MagusStudios.WaveFunctionCollapse
 {
     public static class TileUtils
     {
+        public static int TILE_SIZE = 1; // In Unity Coordinate System units
+
         /// <summary>
         /// Deterministically hashes a Vector3Int into a uniform integer in [1, n].
         /// Produces consistent results for the same input for deterministic procedural tiling.
@@ -24,7 +26,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 return (Mathf.Abs(hash) % n) + 1;
             }
         }
-        
+
         public static uint HashWorldBlock(uint seed, Vector2Int v, byte b)
         {
             Span<byte> buffer = stackalloc byte[9]; // int x (4) + int y (4) + byte b (1)
@@ -67,6 +69,26 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Refresh the tilemap so it updates visually
             tilemap.RefreshAllTiles();
+        }
+
+        public static Vector2Int GetWorldPosition(Vector2Int chunkPos, Vector2Int localTilePosition, int chunkSize)
+        {
+            return chunkPos * chunkSize + localTilePosition;
+        }
+
+        public static Vector2 GetTileCenterPosition(Vector2Int tilePosition)
+        {
+            return tilePosition + Vector2.one * 0.5f * TILE_SIZE;
+        }
+
+        public static int Flatten(Vector2Int position, int width, int height)
+        {
+            return position.y * width + position.x;
+        }
+        
+        public static Vector2Int Unflatten(int index, int width, int height)
+        {
+            return new Vector2Int(index % width, index / width);
         }
     }
 

@@ -27,7 +27,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         //dimensions (in blocks)
         public Vector2Int Blocks = new(4, 4);
-        public Vector2Int BlockSize = new(32, 32);
+        public Vector2Int BlockSize = new(36, 36);
 
         //randomization
         public uint Seed;

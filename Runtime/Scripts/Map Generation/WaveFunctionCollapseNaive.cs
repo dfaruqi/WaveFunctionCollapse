@@ -73,6 +73,12 @@ namespace MagusStudios.WaveFunctionCollapse
             Debug.Log(
                 $"[{nameof(WaveFunctionCollapse)}] Starting WFC map generation with module set {Template.name} and seed {Seed}");
 
+            if (tilemap == null)
+            {
+                Debug.LogError($"[{nameof(WaveFunctionCollapse)}] No tilemap found");
+                yield break;
+            }
+            
             //prepare data needed for algorithm
             var modules = Template.TileRules.Modules;
             int[] allTileIDs = modules.Keys.ToArray();
@@ -147,8 +153,8 @@ namespace MagusStudios.WaveFunctionCollapse
                     //update the tiles after each pass of the algorithm so you can watch the map generate
                     Vector3Int pos = cell.pos.ToVector3Int();
                     int tileId = cell.Domain[0];
-                    TileBase tile = Template.TileDatabase.Tiles[tileId];
-                    tilemap.SetTileDynamic(pos, tile);
+                    TileBase tile = Template.TileDatabase[tileId];
+                    tilemap.SetTile(pos, tile);
                 }
 
                 yield return new WaitForSeconds(1f / animatedPassesPerSecond);

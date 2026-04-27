@@ -114,7 +114,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 cell.selected = -1;
-
+    
                 return cell;
             }
 
@@ -254,7 +254,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int enforcerTile = LeftBorder[i];
                 if (enforcerTile < 0)
                 {
-                    index++;
+                    index += Width;
                     continue;
                 }
 
@@ -282,7 +282,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int enforcerTile = RightBorder[i];
                 if (enforcerTile < 0)
                 {
-                    index++;
+                    index += Width;
                     continue;
                 }
 
@@ -711,6 +711,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             if (cell.domainCount == 0)
             {
+                cell.selected = -1;
                 Cells[cellToConstrain] = cell;
                 UpdateEntropy(cellToConstrain);
 

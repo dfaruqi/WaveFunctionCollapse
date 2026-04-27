@@ -22,6 +22,8 @@ namespace MagusStudios.WaveFunctionCollapse
         public Tilemap TargetTilemap; // The target tilemap to generate the world upon
         public uint Seed;
 
+        public WfcTemplate Template => template;
+
         [SerializeField] int drawDistance = 1;
         [SerializeField] bool clearOnStart = true;
         [SerializeField] private WfcTemplate template;
@@ -33,7 +35,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         // size of loaded/saved chunks, must be even
         // suggestions: 16,32,48,64
-        private const int CHUNK_SIZE = 48;
+        public const int CHUNK_SIZE = 48;
 
         // size of generated blocks, which are later converted to chunks. Must satisfy the following:
         // BLOCKSIZE is even and BLOCK_SIZE < CHUNK_SIZE and BLOCK_SIZE > CHUNK_SIZE / 2
@@ -52,13 +54,26 @@ namespace MagusStudios.WaveFunctionCollapse
         private readonly HashSet<Vector2Int> _drawnChunks = new();
 
         // List of job handles for blocks currently generating
-        private readonly List<JobHandle> _jobHandles = new List<JobHandle>();
+        private readonly List<JobHandle> _jobHandles = new();
 
         // record of all blocks generated and the layer they have been generated through
         // (0=pregenerated, 1-4=layers 1-4)
-        private Dictionary<Vector2Int, byte> _allGeneratedBlocks = new Dictionary<Vector2Int, byte>();
+        private Dictionary<Vector2Int, byte> _allGeneratedBlocks = new();
 
-        private Vector2Int _lastPlayerChunk = new Vector2Int(int.MaxValue, int.MaxValue);
+        private Vector2Int _lastPlayerChunk = new(int.MaxValue, int.MaxValue);
+
+        // ~ Events ~
+
+        public delegate void ChunkDrawnHandler(Vector2Int chunkPos, IReadOnlyList<int> chunkData);
+
+        public event ChunkDrawnHandler OnChunkDrawn;
+
+        public delegate void ChunkUndrawnHandler(Vector2Int
+            chunkPos);
+
+        public event ChunkUndrawnHandler OnChunkUndrawn;
+
+        // ~ Data structs ~
 
         private static readonly Vector2Int[] NeighborOffsets =
         {
@@ -86,7 +101,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 return;
             }
 
-            // initialize offsets for blocks (global data)
+            // initialize offsets for blocks (just some reference data that we won't have to recompute)
             int blockGap = CHUNK_SIZE - BLOCK_SIZE;
             BlockOffsets[0] = new Vector2Int(blockGap / 2, -CHUNK_SIZE / 2 + blockGap / 2);
             BlockOffsets[1] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, -CHUNK_SIZE / 2 + blockGap / 2);
@@ -118,7 +133,7 @@ namespace MagusStudios.WaveFunctionCollapse
             _allGeneratedBlocks = await LoadChunkLayersAsync(GetAllGeneratedBlocksPath());
             _initialized = true;
         }
-        
+
         private IEnumerator StreamWorld()
         {
             while (!_initialized)
@@ -278,6 +293,8 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 _drawnChunks.Remove(chunkPos);
 
+                OnChunkUndrawn?.Invoke(chunkPos);
+
                 yield return null;
             }
 
@@ -304,10 +321,15 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
                 {
-                    int tile = _loadedChunks[chunkPos][i];
+                    int tileKey = _loadedChunks[chunkPos][i];
 
-                    if (tile < 0) tileBases[i] = null;
-                    else tileBases[i] = template.TileDatabase.Tiles[tile];
+                    if (tileKey < 0)
+                    {
+                        tileBases[i] = null;
+                        continue;
+                    }
+
+                    tileBases[i] = template.TileDatabase[tileKey];
                 }
 
                 Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
@@ -316,6 +338,9 @@ namespace MagusStudios.WaveFunctionCollapse
                 TargetTilemap.SetTilesBlock(bounds, tileBases);
 
                 _drawnChunks.Add(chunkPos);
+
+                OnChunkDrawn?.Invoke(chunkPos, _loadedChunks[chunkPos]);
+
                 yield return null;
             }
         }
@@ -329,16 +354,16 @@ namespace MagusStudios.WaveFunctionCollapse
             WfcBiomeData wfcBiomeData = new WfcBiomeData(template);
             // todo when biomes are added, one of these will be needed for each module set
 
-            // generate the chunks in 4 passes using the modifying-in-blocks approach
-            for (byte pass = 0; pass < 4; pass++)
+            // generate the chunks in 4 overlapping layers using the layered-block-evaluation approach
+            for (byte layer = 0; layer < 4; layer++)
             {
-                foreach (Vector2Int chunk in blocksToGenerate[pass])
+                foreach (Vector2Int chunk in blocksToGenerate[layer])
                 {
                     // Create rng
-                    Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, pass));
+                    Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, layer));
 
                     // get the border information for this block from loaded chunks
-                    WfcUtils.Borders borders = GetBordersOfBlock(chunk, pass, wfcBiomeData.moduleKeyToIndex);
+                    WfcUtils.Borders borders = GetBordersOfBlock(chunk, layer, wfcBiomeData.moduleKeyToIndex);
                     WfcBlockState wfcBlockState = new WfcBlockState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
                         template.TileRules.Modules.Count, template, rng, borders);
 
@@ -388,13 +413,16 @@ namespace MagusStudios.WaveFunctionCollapse
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
 
-                    bool error = IsValidOutput(wfcBlockState.Output, template);
+                    bool error = IsOutputValid(wfcBlockState.Output, chunkPosition, layer,
+                        wfcBiomeData.moduleIndexToKey);
                     if (error)
-                        Debug.LogWarning("error in chunk " + chunkPosition);
-
-                    if (!error)
-                        UpdateChunksFromBlock(chunkPosition, pass, wfcBlockState.Output, wfcBiomeData.moduleIndexToKey,
+                        Debug.LogWarning($"[{nameof(WfcWorldStreamer)}] Error in chunk " + chunkPosition);
+                    else
+                    {
+                        UpdateChunksFromBlock(chunkPosition, layer, wfcBlockState.Output, wfcBiomeData.moduleIndexToKey,
                             template.DefaultTileKey);
+                    }
+
 
                     // clean up state
                     wfcBlockState.Dispose();
@@ -403,8 +431,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 stateDict.Clear();
             }
 
-            // clean up globals
-
+            // clean up shared biome data
             wfcBiomeData.Dispose();
         }
 
@@ -521,40 +548,102 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-
-        private bool IsValidOutput(NativeArray<int> output, WfcTemplate template)
+        private bool IsOutputValid(NativeArray<int> output, Vector2Int chunkPos, int layer,
+            Dictionary<int, int> moduleIndexToKey)
         {
             SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = template.TileRules.Modules;
 
+            Vector2Int chunkStartTilePosGlobal = chunkPos * CHUNK_SIZE;
+            Vector2Int blockStartTilePosGlobal = chunkStartTilePosGlobal + BlockOffsets[layer];
+
             for (int i = 0; i < output.Length; i++)
             {
-                int value = output[i];
+                int localX = i % BLOCK_SIZE;
+                int localY = i / BLOCK_SIZE;
 
-                if (value < 0) return false;
-
-                if (!modules.ContainsKey(value))
+                // tile left 
+                int leftNeighborTileKey;
+                if (localX == 0)
                 {
-                    Debug.LogError($"[{nameof(WfcWorldStreamer)}] tile in output not found in template");
-                    return false;
+                    (Vector2Int chunk, Vector2Int localTilePosition) =
+                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * localY +
+                                                             Vector2Int.left);
+                    
+                    leftNeighborTileKey =
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                }
+                else
+                {
+                    leftNeighborTileKey = moduleIndexToKey[output[i - 1]];
                 }
 
-                int x = i % BLOCK_SIZE;
-                int y = i / BLOCK_SIZE;
-
-                if (x > 0 && !modules[output[i - 1]].Neighbors[Direction.Left].Contains(value))
+                if (!modules[leftNeighborTileKey].Neighbors[Direction.Right].Contains(output[i]))
                     return false;
 
-                if (x < BLOCK_SIZE - 1 && !modules[output[i + 1]].Neighbors[Direction.Right].Contains(value))
+                // tile right
+                int rightNeighborTileKey;
+                if (localX == BLOCK_SIZE - 1)
+                {
+                    (Vector2Int chunk, Vector2Int localTilePosition) =
+                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * localY +
+                                                             Vector2Int.right * BLOCK_SIZE);
+                    rightNeighborTileKey =
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                }
+                else
+                {
+                    rightNeighborTileKey = moduleIndexToKey[output[i + 1]];
+                }
+
+                if (!modules[rightNeighborTileKey].Neighbors[Direction.Left].Contains(output[i]))
                     return false;
 
-                if (y > 0 && !modules[output[i - BLOCK_SIZE]].Neighbors[Direction.Down].Contains(value))
+                // tile up
+                int upNeighborTileKey;
+                if (localY == 0)
+                {
+                    (Vector2Int chunk, Vector2Int localTilePosition) =
+                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * (-1) +
+                                                             Vector2Int.right * localX);
+                    upNeighborTileKey =
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                }
+                else
+                {
+                    upNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
+                }
+
+                if (!modules[upNeighborTileKey].Neighbors[Direction.Down].Contains(output[i]))
                     return false;
 
-                if (y < BLOCK_SIZE - 1 && !modules[output[i + BLOCK_SIZE]].Neighbors[Direction.Up].Contains(value))
+                // tile down
+                int downNeighborTileKey;
+                if (localY == BLOCK_SIZE - 1)
+                {
+                    (Vector2Int chunk, Vector2Int localTilePosition) =
+                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.down * BLOCK_SIZE +
+                                                             Vector2Int.right * localX);
+                    downNeighborTileKey =
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                }
+                else
+                {
+                    downNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
+                }
+
+                if (!modules[downNeighborTileKey].Neighbors[Direction.Up].Contains(output[i]))
                     return false;
             }
 
             return true;
+        }
+
+        private int GetNeighborChunkTile(Vector2Int neighborBlockPos, int localX, int localY)
+        {
+            if (!_loadedChunks.TryGetValue(neighborBlockPos, out var chunk))
+                return -1;
+
+            return chunk[localX + localY * BLOCK_SIZE];
         }
 
         /// <summary>

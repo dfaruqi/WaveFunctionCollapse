@@ -1,10 +1,9 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-    [CreateAssetMenu(fileName = "WorldSpawn", menuName = "World Generation/WorldSpawn")]
-    public class WorldSpawn : ScriptableObject
+    public class WorldSpawn : MonoBehaviour
     {
-        public GameObject Prefab;
+        
     }
 }

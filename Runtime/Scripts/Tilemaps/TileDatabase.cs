@@ -11,6 +11,8 @@ namespace MagusStudios.WaveFunctionCollapse
     {
         public SerializedDictionary<int, Tile> Tiles;
 
+        public Tile this[int key] => Tiles[key];
+
         /// <summary>
         /// Attempts to get a Tile from the database by its key.
         /// </summary>
