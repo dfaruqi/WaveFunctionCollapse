@@ -8,7 +8,7 @@ namespace MagusStudios.WaveFunctionCollapse
     [RequireComponent(typeof(WfcWorldStreamer))]
     public class WfcWorldSpawner : MonoBehaviour
     {
-        [SerializeField] private WfcWorldStreamer worldStreamer;
+        private WfcWorldStreamer _worldStreamer;
 
         private Dictionary<GameObject, ObjectPool<WorldSpawn>> _spawnPools =
             new Dictionary<GameObject, ObjectPool<WorldSpawn>>();
@@ -17,16 +17,21 @@ namespace MagusStudios.WaveFunctionCollapse
         private Dictionary<Vector2Int, List<(WorldSpawn spawn, GameObject prefab)>> _chunkSpawns =
             new Dictionary<Vector2Int, List<(WorldSpawn, GameObject)>>();
 
+        private void Awake()
+        {
+            _worldStreamer = GetComponent<WfcWorldStreamer>();
+        }
+
         private void OnEnable()
         {
-            worldStreamer.OnChunkDrawn += HandleChunkDrawn;
-            worldStreamer.OnChunkUndrawn += HandleChunkUndrawn;
+            _worldStreamer.OnChunkDrawn += HandleChunkDrawn;
+            _worldStreamer.OnChunkUndrawn += HandleChunkUndrawn;
         }
 
         private void OnDisable()
         {
-            worldStreamer.OnChunkDrawn -= HandleChunkDrawn;
-            worldStreamer.OnChunkUndrawn -= HandleChunkUndrawn;
+            _worldStreamer.OnChunkDrawn -= HandleChunkDrawn;
+            _worldStreamer.OnChunkUndrawn -= HandleChunkUndrawn;
         }
 
         private void HandleChunkDrawn(Vector2Int chunkPos, IReadOnlyList<int> chunkData)
@@ -36,7 +41,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             for (int i = 0; i < chunkData.Count; i++)
             {
-                var tile = worldStreamer.Template.TileDatabase[chunkData[i]];
+                var tile = _worldStreamer.Template.TileDatabase[chunkData[i]];
                 if (tile is not GameObjectTile gameObjectTile)
                     continue;
 

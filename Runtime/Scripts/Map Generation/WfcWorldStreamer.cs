@@ -22,11 +22,10 @@ namespace MagusStudios.WaveFunctionCollapse
         public Tilemap TargetTilemap; // The target tilemap to generate the world upon
         public uint Seed;
 
-        public WfcTemplate Template => template;
 
         [SerializeField] int drawDistance = 1;
         [SerializeField] bool clearOnStart = true;
-        [SerializeField] private WfcTemplate template;
+        [SerializeField] Biome biome;
 
         // ~ Constants ~
 
@@ -329,7 +328,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         continue;
                     }
 
-                    tileBases[i] = template.TileDatabase[tileKey];
+                    tileBases[i] = biome.GetTemplate(chunkPos).TileDatabase[tileKey];
                 }
 
                 Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
@@ -350,15 +349,26 @@ namespace MagusStudios.WaveFunctionCollapse
             // create a dictionary to track all the wave function collapse runs
             Dictionary<Vector2Int, WfcBlockState> stateDict = new();
 
-            // Create the globals for wfc
-            WfcBiomeData wfcBiomeData = new WfcBiomeData(template);
-            // todo when biomes are added, one of these will be needed for each module set
+            // Create the global data for each sub-biome (this data will be accessed in parallel by the wfc runs)
+            Dictionary<Vector2Int, WfcBiomeData> biomeGlobalsDict = new Dictionary<Vector2Int, WfcBiomeData>();
+            for (int layer = 0; layer < blocksToGenerate.Length; layer++)
+            {
+                foreach (Vector2Int chunk in blocksToGenerate[layer])
+                {
+                    if (!biomeGlobalsDict.ContainsKey(chunk))
+                        biomeGlobalsDict[chunk] = new WfcBiomeData(biome.GetTemplate(chunk));
+                }
+            }
 
             // generate the chunks in 4 overlapping layers using the layered-block-evaluation approach
             for (byte layer = 0; layer < 4; layer++)
             {
                 foreach (Vector2Int chunk in blocksToGenerate[layer])
                 {
+                    WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunk];
+                    WfcTemplate template = wfcBiomeData.Template;
+                    // get the template and 
+                    
                     // Create rng
                     Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, layer));
 
@@ -410,6 +420,8 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     Vector2Int chunkPosition = kvp.Key;
                     WfcBlockState wfcBlockState = kvp.Value;
+                    
+                    WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunkPosition];
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
 
@@ -420,9 +432,8 @@ namespace MagusStudios.WaveFunctionCollapse
                     else
                     {
                         UpdateChunksFromBlock(chunkPosition, layer, wfcBlockState.Output, wfcBiomeData.moduleIndexToKey,
-                            template.DefaultTileKey);
+                            wfcBiomeData.Template.DefaultTileKey);
                     }
-
 
                     // clean up state
                     wfcBlockState.Dispose();
@@ -432,7 +443,10 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             // clean up shared biome data
-            wfcBiomeData.Dispose();
+            foreach (var kvp in biomeGlobalsDict)
+            {
+                kvp.Value.Dispose();
+            }
         }
 
         private void GetUnloadedChunksInLoadDistance(Vector2Int playerChunkPosition,
@@ -489,7 +503,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int[] grass = new int[size];
                 for (int i = 0; i < size; i++)
                 {
-                    grass[i] = template.DefaultTileKey;
+                    grass[i] = biome.GetTemplate(chunkPos).DefaultTileKey;
                 }
 
                 _loadedChunks.Add(chunkPos, grass);
@@ -551,7 +565,7 @@ namespace MagusStudios.WaveFunctionCollapse
         private bool IsOutputValid(NativeArray<int> output, Vector2Int chunkPos, int layer,
             Dictionary<int, int> moduleIndexToKey)
         {
-            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = template.TileRules.Modules;
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = biome.GetTemplate(chunkPos).TileRules.Modules;
 
             Vector2Int chunkStartTilePosGlobal = chunkPos * CHUNK_SIZE;
             Vector2Int blockStartTilePosGlobal = chunkStartTilePosGlobal + BlockOffsets[layer];
@@ -568,7 +582,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     (Vector2Int chunk, Vector2Int localTilePosition) =
                         GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * localY +
                                                              Vector2Int.left);
-                    
+
                     leftNeighborTileKey =
                         _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
                 }

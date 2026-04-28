@@ -14,13 +14,16 @@ namespace MagusStudios.WaveFunctionCollapse
     /// </summary>
     public class WfcBiomeData
     {
-        public NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> Modules;
+        public WfcTemplate Template;
         public Dictionary<int, int> moduleKeyToIndex;
         public Dictionary<int, int> moduleIndexToKey;
+        public NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> Modules;
         public NativeArray<Direction> directions;
 
         public WfcBiomeData(WfcTemplate template)
         {
+            Template = template;
+            
             SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
             // === Initialization of Readonly Lookup Structures (immutable, accessible in parallel by multiple worker threads) ===
