@@ -112,7 +112,7 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <param name="tilemap"></param>
         /// <param name="position"></param>
         /// <param name="tile"></param>
-        public static void SetTile(this Tilemap tilemap, Vector3Int position, GameObjectTile tile)
+        public static void SetTile(this Tilemap tilemap, Vector3Int position, RandomGameObjectTile tile)
         {
             // tilemap.SetTile(position, tile);
             // if (tile.Prefab == null)

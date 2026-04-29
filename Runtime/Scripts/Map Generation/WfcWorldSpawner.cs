@@ -5,6 +5,10 @@ using UnityEngine.Pool;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
+    [System.Obsolete(
+        "This component is no longer needed as of 4/28/26 since switching to using GameObjects directly " +
+        "on the tilemap for spawns instead of a separate pooling system. This script could be revived if the " +
+        "built-in tilemap functionality proves inadequate. ")]
     [RequireComponent(typeof(WfcWorldStreamer))]
     public class WfcWorldSpawner : MonoBehaviour
     {
@@ -34,23 +38,24 @@ namespace MagusStudios.WaveFunctionCollapse
             _worldStreamer.OnChunkUndrawn -= HandleChunkUndrawn;
         }
 
-        private void HandleChunkDrawn(Vector2Int chunkPos, IReadOnlyList<int> chunkData)
+        private void HandleChunkDrawn(Vector2Int chunkPos, IReadOnlyList<int> chunkData, Biome biome)
         {
             int chunkSize = WfcWorldStreamer.CHUNK_SIZE;
             List<(WorldSpawn, GameObject)> spawns = new List<(WorldSpawn, GameObject)>();
 
             for (int i = 0; i < chunkData.Count; i++)
             {
-                var tile = _worldStreamer.Template.TileDatabase[chunkData[i]];
-                if (tile is not GameObjectTile gameObjectTile)
+                var tile = biome.GetTemplate(chunkPos).TileDatabase[chunkData[i]];
+                if (tile is not RandomGameObjectTile gameObjectTile)
                     continue;
 
                 int localX = i % chunkSize;
                 int localY = i / chunkSize;
-                Vector2Int cellWorldPos = TileUtils.GetWorldPosition(chunkPos, new Vector2Int(localX, localY), chunkSize);
+                Vector2Int cellWorldPos =
+                    TileUtils.GetWorldPosition(chunkPos, new Vector2Int(localX, localY), chunkSize);
                 Vector2 cellCenterPos = TileUtils.GetTileCenterPosition(cellWorldPos);
-                
-                GameObject prefab = gameObjectTile.Prefab;
+
+                GameObject prefab = gameObjectTile.gameObject;
                 ObjectPool<WorldSpawn> pool = GetOrCreatePool(prefab);
                 WorldSpawn spawn = pool.Get();
                 spawn.transform.position = cellCenterPos;

@@ -22,7 +22,6 @@ namespace MagusStudios.WaveFunctionCollapse
         public Tilemap TargetTilemap; // The target tilemap to generate the world upon
         public uint Seed;
 
-
         [SerializeField] int drawDistance = 1;
         [SerializeField] bool clearOnStart = true;
         [SerializeField] Biome biome;
@@ -59,11 +58,15 @@ namespace MagusStudios.WaveFunctionCollapse
         // (0=pregenerated, 1-4=layers 1-4)
         private Dictionary<Vector2Int, byte> _allGeneratedBlocks = new();
 
+        // the last chunk the player was in, used to determine when to update chunks
         private Vector2Int _lastPlayerChunk = new(int.MaxValue, int.MaxValue);
+        
+        // cached containers used in generation to avoid reallocating every time.
+        
 
         // ~ Events ~
 
-        public delegate void ChunkDrawnHandler(Vector2Int chunkPos, IReadOnlyList<int> chunkData);
+        public delegate void ChunkDrawnHandler(Vector2Int chunkPos, IReadOnlyList<int> chunkData, Biome biome);
 
         public event ChunkDrawnHandler OnChunkDrawn;
 
@@ -338,7 +341,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 _drawnChunks.Add(chunkPos);
 
-                OnChunkDrawn?.Invoke(chunkPos, _loadedChunks[chunkPos]);
+                OnChunkDrawn?.Invoke(chunkPos, _loadedChunks[chunkPos], biome);
 
                 yield return null;
             }
@@ -368,7 +371,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunk];
                     WfcTemplate template = wfcBiomeData.Template;
                     // get the template and 
-                    
+
                     // Create rng
                     Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, layer));
 
@@ -420,15 +423,15 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     Vector2Int chunkPosition = kvp.Key;
                     WfcBlockState wfcBlockState = kvp.Value;
-                    
+
                     WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunkPosition];
 
                     // If has error in output, fall back to previous layer, otherwise update the loaded chunks
 
-                    bool error = IsOutputValid(wfcBlockState.Output, chunkPosition, layer,
+                    bool valid = IsOutputValid(wfcBlockState.Output, chunkPosition, layer,
                         wfcBiomeData.moduleIndexToKey);
-                    if (error)
-                        Debug.LogWarning($"[{nameof(WfcWorldStreamer)}] Error in chunk " + chunkPosition);
+                    if (!valid)
+                        Debug.LogWarning($"[{nameof(WfcWorldStreamer)}] Error in chunk {chunkPosition} on layer {layer}");
                     else
                     {
                         UpdateChunksFromBlock(chunkPosition, layer, wfcBlockState.Output, wfcBiomeData.moduleIndexToKey,
@@ -565,7 +568,8 @@ namespace MagusStudios.WaveFunctionCollapse
         private bool IsOutputValid(NativeArray<int> output, Vector2Int chunkPos, int layer,
             Dictionary<int, int> moduleIndexToKey)
         {
-            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = biome.GetTemplate(chunkPos).TileRules.Modules;
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules =
+                biome.GetTemplate(chunkPos).TileRules.Modules;
 
             Vector2Int chunkStartTilePosGlobal = chunkPos * CHUNK_SIZE;
             Vector2Int blockStartTilePosGlobal = chunkStartTilePosGlobal + BlockOffsets[layer];
@@ -588,7 +592,9 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
                 else
                 {
-                    leftNeighborTileKey = moduleIndexToKey[output[i - 1]];
+                    int leftTileNeighborIndex = output[i - 1];
+                    if (leftTileNeighborIndex < 0) return false;
+                    leftNeighborTileKey = moduleIndexToKey[leftTileNeighborIndex];
                 }
 
                 if (!modules[leftNeighborTileKey].Neighbors[Direction.Right].Contains(output[i]))
@@ -606,7 +612,9 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
                 else
                 {
-                    rightNeighborTileKey = moduleIndexToKey[output[i + 1]];
+                    int rightTileNeighborIndex = output[i + 1];
+                    if (rightTileNeighborIndex < 0) return false;
+                    rightNeighborTileKey = moduleIndexToKey[rightTileNeighborIndex];
                 }
 
                 if (!modules[rightNeighborTileKey].Neighbors[Direction.Left].Contains(output[i]))
@@ -614,17 +622,19 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 // tile up
                 int upNeighborTileKey;
-                if (localY == 0)
+                if (localY == BLOCK_SIZE - 1)
                 {
                     (Vector2Int chunk, Vector2Int localTilePosition) =
-                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * (-1) +
+                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * BLOCK_SIZE +
                                                              Vector2Int.right * localX);
                     upNeighborTileKey =
                         _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
                 }
                 else
                 {
-                    upNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
+                    int upNeighborTileIndex = output[i + BLOCK_SIZE];
+                    if (upNeighborTileIndex < 0) return false;
+                    upNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
                 }
 
                 if (!modules[upNeighborTileKey].Neighbors[Direction.Down].Contains(output[i]))
@@ -632,17 +642,19 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 // tile down
                 int downNeighborTileKey;
-                if (localY == BLOCK_SIZE - 1)
+                if (localY == 0)
                 {
                     (Vector2Int chunk, Vector2Int localTilePosition) =
-                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.down * BLOCK_SIZE +
+                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.down +
                                                              Vector2Int.right * localX);
                     downNeighborTileKey =
                         _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
                 }
                 else
                 {
-                    downNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
+                    int downNeighborTileIndex = output[i - BLOCK_SIZE];
+                    if (downNeighborTileIndex < 0) return false;
+                    downNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
                 }
 
                 if (!modules[downNeighborTileKey].Neighbors[Direction.Up].Contains(output[i]))

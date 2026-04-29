@@ -2,7 +2,7 @@
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-    [CreateAssetMenu(fileName = "Biome", menuName = "Wave Function Collapse/Biome")]
+    [CreateAssetMenu(fileName = "Biome", menuName = "World Generation/Biome")]
 
     public class Biome : ScriptableObject
     {

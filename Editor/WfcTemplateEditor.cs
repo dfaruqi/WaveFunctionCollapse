@@ -169,7 +169,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     else
                         GUILayout.Label("Loading...", GUILayout.Width(40), GUILayout.Height(40));
 
-                    EditorGUILayout.LabelField(tile.sprite.name, GUILayout.Width(100));
+                    EditorGUILayout.LabelField(tile.name, GUILayout.Width(100));
                 }
                 else
                 {
