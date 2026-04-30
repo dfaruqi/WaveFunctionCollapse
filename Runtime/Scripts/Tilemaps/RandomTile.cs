@@ -21,7 +21,7 @@ namespace MagusStudios.WaveFunctionCollapse
             // If we have possible sprites, pick one deterministically based on the map position
             if (possibilities != null && possibilities.Count > 0)
             {
-                int index = TileUtils.HashPosition(position, possibilities.Count) - 1;
+                int index = TileUtils.HashPosition(position.ToVector2Int(), possibilities.Count);
                 tileData.sprite = possibilities[index];
             }
         }

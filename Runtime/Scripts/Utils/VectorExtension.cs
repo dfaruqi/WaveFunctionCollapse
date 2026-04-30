@@ -15,6 +15,11 @@ namespace MagusStudios.WaveFunctionCollapse
             return new Vector3Int((int)v.x, (int)v.y, 0);
         }
 
+        public static Vector2Int ToVector2Int(this Vector3Int v)
+        {
+            return new Vector2Int(v.x, v.y);
+        }
+
         public static Vector3Int ToVector3Int(this Vector2Int v)
         {
             return new Vector3Int(v.x, v.y, 0);

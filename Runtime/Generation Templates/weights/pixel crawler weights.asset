@@ -16,7 +16,7 @@ MonoBehaviour:
   Weights:
     _serializedList:
     - Key: 0
-      Value: 8
+      Value: 6
     - Key: 1
       Value: 1
     - Key: 2
@@ -110,8 +110,20 @@ MonoBehaviour:
     - Key: 46
       Value: 1
     - Key: 47
-      Value: 3
+      Value: 2
     - Key: 48
-      Value: 0.5
+      Value: 2
     - Key: 49
+      Value: 3
+    - Key: 50
       Value: 0.5
+    - Key: 51
+      Value: 0.5
+    - Key: 52
+      Value: 1
+    - Key: 53
+      Value: 1
+    - Key: 54
+      Value: 3
+    - Key: 55
+      Value: 1

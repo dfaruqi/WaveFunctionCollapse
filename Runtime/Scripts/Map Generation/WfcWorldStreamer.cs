@@ -61,8 +61,19 @@ namespace MagusStudios.WaveFunctionCollapse
         // the last chunk the player was in, used to determine when to update chunks
         private Vector2Int _lastPlayerChunk = new(int.MaxValue, int.MaxValue);
         
-        // cached containers used in generation to avoid reallocating every time.
-        
+        // cached containers used in generation to avoid reallocation. Cleared every chunk update.
+        private HashSet<Vector2Int> _unloadedChunksInLoadDistance = new();
+        private readonly HashSet<Vector2Int> _chunksPregenerated = new();
+        private readonly HashSet<Vector2Int> _chunksUnloaded = new();
+        private HashSet<Vector2Int> _chunksInDrawDistance = new();
+        private readonly HashSet<Vector2Int> _chunksAffectedByGeneration = new();
+        private readonly HashSet<Vector2Int> _chunksToDraw = new();
+        private HashSet<Vector2Int> _chunksToUndraw = new();
+        private HashSet<Vector2Int> _chunksToUnload = new();
+        private HashSet<Vector2Int>[] _blocksToGenerate = new HashSet<Vector2Int>[4];
+        private readonly List<Task> _saveTasks = new();
+        private readonly TileBase[] _tileDrawBuffer = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
+        private readonly TileBase[] _nullTileBuffer = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
 
         // ~ Events ~
 
@@ -115,6 +126,12 @@ namespace MagusStudios.WaveFunctionCollapse
                 TargetTilemap.RefreshAllTiles();
                 TargetTilemap.ClearAllTiles();
             }
+            
+            // initialize blocks to generate array
+            for(int i = 0; i < _blocksToGenerate.Length; i++)
+            {
+                _blocksToGenerate[i] = new HashSet<Vector2Int>();
+            }
 
             // load all generated chunk coords
             _ = InitializeAsync();
@@ -161,16 +178,16 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             // - Load Chunks -
 
-            HashSet<Vector2Int> unloadedChunksInLoadDistance = new HashSet<Vector2Int>();
-            GetUnloadedChunksInLoadDistance(playerChunkPosition, ref unloadedChunksInLoadDistance);
+            _unloadedChunksInLoadDistance.Clear();
+            GetUnloadedChunksInLoadDistance(playerChunkPosition, ref _unloadedChunksInLoadDistance);
 
             // keep track of chunks that get generated, loaded, or unloaded
-            HashSet<Vector2Int> chunksPregenerated = new HashSet<Vector2Int>();
-            HashSet<Vector2Int> chunksUnloaded = new HashSet<Vector2Int>();
+            _chunksPregenerated.Clear();
+            _chunksUnloaded.Clear();
 
             // load or pre-generate
             Task loadTask = Task.WhenAll(
-                unloadedChunksInLoadDistance.Select(coord => LoadOrPregenerateChunkAsync(coord, chunksPregenerated))
+                _unloadedChunksInLoadDistance.Select(coord => LoadOrPregenerateChunkAsync(coord, _chunksPregenerated))
             );
 
             while (!loadTask.IsCompleted)
@@ -183,27 +200,27 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // generate blocks
             // container to get all blocks that should be generated and to what layer they should be generated to
-            HashSet<Vector2Int>[] blocksToGenerate = new HashSet<Vector2Int>[4]; // 4 passes of generation 0-3
-            for (int i = 0; i < blocksToGenerate.Length; i++)
+            foreach (HashSet<Vector2Int> hashSet in _blocksToGenerate)
             {
-                blocksToGenerate[i] = new HashSet<Vector2Int>();
+                hashSet?.Clear();
             }
 
-            GetChunksInDistance(playerChunkPosition, drawDistance, out HashSet<Vector2Int> chunksInDrawDistance);
+            _chunksInDrawDistance.Clear();
+            GetChunksInDistance(playerChunkPosition, drawDistance, ref _chunksInDrawDistance);
 
-            foreach (Vector2Int chunk in chunksInDrawDistance)
+            foreach (Vector2Int chunk in _chunksInDrawDistance)
             {
-                if (_allGeneratedBlocks[chunk] < 4) blocksToGenerate[3].Add(chunk);
+                if (_allGeneratedBlocks[chunk] < 4) _blocksToGenerate[3].Add(chunk);
             }
 
-            CascadeBlockDependencies(ref blocksToGenerate);
+            CascadeBlockDependencies(ref _blocksToGenerate);
 
-            yield return StartCoroutine(GenerateBlocks(blocksToGenerate));
+            yield return StartCoroutine(GenerateBlocks(_blocksToGenerate));
 
             // update all generated blocks dictionary
             for (byte i = 0; i < 4; i++)
             {
-                foreach (Vector2Int block in blocksToGenerate[i])
+                foreach (Vector2Int block in _blocksToGenerate[i])
                 {
                     byte oldBlockGeneratedTo = _allGeneratedBlocks[block];
                     byte newBlockGeneratedTo = (byte)(i + 1);
@@ -216,58 +233,67 @@ namespace MagusStudios.WaveFunctionCollapse
             // - Unload Chunks -
 
             // unload chunks
+            _chunksToUnload.Clear();
             GetChunksOutsideDistance(playerChunkPosition, drawDistance + 3, _loadedChunks.Keys,
-                out HashSet<Vector2Int> chunksToUnload);
+                ref _chunksToUnload);
 
-            foreach (Vector2Int chunkPos in chunksToUnload)
+            foreach (Vector2Int chunkPos in _chunksToUnload)
             {
-                if (_loadedChunks.Remove(chunkPos)) chunksUnloaded.Add(chunkPos);
+                if (_loadedChunks.Remove(chunkPos)) _chunksUnloaded.Add(chunkPos);
             }
 
             // - Update Files -
 
             // get chunks affected by generation from block dependencies
-            HashSet<Vector2Int> chunksAffectedByGeneration = new HashSet<Vector2Int>();
+            _chunksAffectedByGeneration.Clear();
 
-            foreach (Vector2Int block in blocksToGenerate[0])
+            foreach (Vector2Int block in _blocksToGenerate[0])
             {
-                chunksAffectedByGeneration.Add(block);
-                chunksAffectedByGeneration.Add(block + Vector2Int.down);
+                _chunksAffectedByGeneration.Add(block);
+                _chunksAffectedByGeneration.Add(block + Vector2Int.down);
             }
 
-            foreach (Vector2Int block in blocksToGenerate[1])
+            foreach (Vector2Int block in _blocksToGenerate[1])
             {
-                chunksAffectedByGeneration.Add(block);
-                chunksAffectedByGeneration.Add(block + Vector2Int.right);
-                chunksAffectedByGeneration.Add(block + Vector2Int.down);
-                chunksAffectedByGeneration.Add(block + Vector2Int.right + Vector2Int.down);
+                _chunksAffectedByGeneration.Add(block);
+                _chunksAffectedByGeneration.Add(block + Vector2Int.right);
+                _chunksAffectedByGeneration.Add(block + Vector2Int.down);
+                _chunksAffectedByGeneration.Add(block + Vector2Int.right + Vector2Int.down);
             }
 
-            foreach (Vector2Int block in blocksToGenerate[2])
+            foreach (Vector2Int block in _blocksToGenerate[2])
             {
-                chunksAffectedByGeneration.Add(block);
-                chunksAffectedByGeneration.Add(block + Vector2Int.right);
+                _chunksAffectedByGeneration.Add(block);
+                _chunksAffectedByGeneration.Add(block + Vector2Int.right);
             }
 
-            foreach (Vector2Int block in blocksToGenerate[3])
+            foreach (Vector2Int block in _blocksToGenerate[3])
             {
-                chunksAffectedByGeneration.Add(block);
+                _chunksAffectedByGeneration.Add(block);
             }
 
             // add chunks that were pregenerated (if not already added)
-            foreach (Vector2Int chunk in chunksPregenerated)
+            foreach (Vector2Int chunk in _chunksPregenerated)
             {
-                chunksAffectedByGeneration.Add(chunk);
+                _chunksAffectedByGeneration.Add(chunk);
             }
 
             // write all chunks that were changed to file and the all generated chunk positions dict
-            List<Task> saveTasks = new List<Task>();
-            saveTasks.AddRange(
-                chunksAffectedByGeneration.Select(chunkPos => SaveChunkAsync(chunkPos, _loadedChunks[chunkPos])));
-            saveTasks.Add(SaveAllGeneratedBlocksDictAsync(_allGeneratedBlocks, GetAllGeneratedBlocksPath()));
+            _saveTasks.Clear();
+            _saveTasks.AddRange(
+                _chunksAffectedByGeneration.Select(chunkPos => SaveChunkAsync(chunkPos, _loadedChunks[chunkPos])));
+            _saveTasks.Add(SaveAllGeneratedBlocksDictAsync(_allGeneratedBlocks, GetAllGeneratedBlocksPath()));
 
-            Task saveAll = Task.WhenAll(saveTasks);
-            yield return new WaitUntil(() => saveAll.IsCompleted);
+            Task saveAll = Task.WhenAll(_saveTasks);
+            bool allChunksSaved;
+            do {
+                allChunksSaved = true;
+                for (int i = 0; i < _jobHandles.Count; i++)
+                {
+                    if (!_jobHandles[i].IsCompleted) { allChunksSaved = false; break; }
+                }
+                if (!allChunksSaved) yield return null;
+            } while (!allChunksSaved);
 
             if (saveAll.IsFaulted)
                 throw saveAll.Exception;
@@ -276,22 +302,24 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // get all chunks within draw distance that are not drawn or should be redrawn because generation affected
             // them (at the edges)
-            HashSet<Vector2Int> chunksToDraw =
-                new HashSet<Vector2Int>(chunksInDrawDistance.Where(x =>
-                    !_drawnChunks.Contains(x) ||
-                    chunksAffectedByGeneration.Contains(x)));
-            yield return StartCoroutine(DrawChunks(chunksToDraw));
+            _chunksToDraw.Clear();
+            foreach (Vector2Int c in _chunksInDrawDistance)
+            {
+                if (!_drawnChunks.Contains(c) || _chunksAffectedByGeneration.Contains(c))
+                    _chunksToDraw.Add(c);
+            }
+            yield return StartCoroutine(DrawChunks(_chunksToDraw));
 
             // un-draw chunks that are drawn and outside draw distance
+            _chunksToUndraw.Clear();
             GetChunksOutsideDistance(playerChunkPosition, drawDistance + 1, _drawnChunks,
-                out HashSet<Vector2Int> chunksToUndraw);
-            TileBase[] nullArray = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
-            foreach (Vector2Int chunkPos in chunksToUndraw)
+                ref _chunksToUndraw);
+            foreach (Vector2Int chunkPos in _chunksToUndraw)
             {
                 Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
                 BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
 
-                TargetTilemap.SetTilesBlock(bounds, nullArray);
+                TargetTilemap.SetTilesBlock(bounds, _nullTileBuffer);
 
                 _drawnChunks.Remove(chunkPos);
 
@@ -304,9 +332,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
             Debug.Log(
                 $"{nameof(WfcWorldStreamer)} Chunk Updates - \n" +
-                $"   loaded/generated: {unloadedChunksInLoadDistance.Count}]\n" +
-                $"   unloaded: {chunksToUnload.Count})\n" +
-                $"   drawn: {chunksToDraw.Count}");
+                $"   loaded/generated: {_unloadedChunksInLoadDistance.Count}]\n" +
+                $"   unloaded: {_chunksUnloaded.Count})\n" +
+                $"   drawn: {_chunksToDraw.Count}");
         }
 
         /// <summary>
@@ -319,25 +347,23 @@ namespace MagusStudios.WaveFunctionCollapse
             // draw chunks that are within the draw distance and were affected by generation or are not drawn
             foreach (Vector2Int chunkPos in chunks)
             {
-                TileBase[] tileBases = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
-
                 for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
                 {
                     int tileKey = _loadedChunks[chunkPos][i];
 
                     if (tileKey < 0)
                     {
-                        tileBases[i] = null;
+                        _tileDrawBuffer[i] = null;
                         continue;
                     }
 
-                    tileBases[i] = biome.GetTemplate(chunkPos).TileDatabase[tileKey];
+                    _tileDrawBuffer[i] = biome.GetTemplate(chunkPos).TileDatabase[tileKey];
                 }
 
                 Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
                 BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
 
-                TargetTilemap.SetTilesBlock(bounds, tileBases);
+                TargetTilemap.SetTilesBlock(bounds, _tileDrawBuffer);
 
                 _drawnChunks.Add(chunkPos);
 
@@ -471,9 +497,9 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         private void GetChunksOutsideDistance(Vector2Int position, int distance, ICollection<Vector2Int> chunks,
-            out HashSet<Vector2Int> chunksOutsideDistance)
+            ref HashSet<Vector2Int> chunksOutsideDistance)
         {
-            chunksOutsideDistance = new HashSet<Vector2Int>();
+            chunksOutsideDistance.Clear();
             foreach (Vector2Int chunkPos in chunks)
             {
                 if (Mathf.Abs(position.y - chunkPos.y) > distance ||
@@ -484,9 +510,9 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void GetChunksInDistance(Vector2Int position, int distance, out HashSet<Vector2Int> chunksInDistance)
+        private void GetChunksInDistance(Vector2Int position, int distance, ref HashSet<Vector2Int> chunksInDistance)
         {
-            chunksInDistance = new();
+            chunksInDistance.Clear();
 
             for (int y = -distance; y <= distance; y++)
             {
@@ -588,7 +614,7 @@ namespace MagusStudios.WaveFunctionCollapse
                                                              Vector2Int.left);
 
                     leftNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
                 }
                 else
                 {
@@ -608,7 +634,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * localY +
                                                              Vector2Int.right * BLOCK_SIZE);
                     rightNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
                 }
                 else
                 {
@@ -628,7 +654,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * BLOCK_SIZE +
                                                              Vector2Int.right * localX);
                     upNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
                 }
                 else
                 {
@@ -648,7 +674,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.down +
                                                              Vector2Int.right * localX);
                     downNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE, CHUNK_SIZE)];
+                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
                 }
                 else
                 {

@@ -34,13 +34,18 @@ MonoBehaviour:
   m_InstancedGameObject: {fileID: 4565988259825387972, guid: 870943fc1de003547883c75cd68f7dfa, type: 3}
   m_Flags: 1
   m_ColliderType: 1
-  prefabPossibilities:
-  - {fileID: 4565988259825387972, guid: 870943fc1de003547883c75cd68f7dfa, type: 3}
-  - {fileID: 912451396512666382, guid: 1598eaa129e433046a8c484adc49da5d, type: 3}
-  - {fileID: 285831156790626410, guid: a178dd82cb9c8fd4fa664c9ef5d17122, type: 3}
-  - {fileID: 285831156790626410, guid: 4f46f19ab48cabe4daf37e7de19f68b4, type: 3}
-  - {fileID: 285831156790626410, guid: 322bc511f83ce454cba8352f07a4bf08, type: 3}
-  spritePossibilities:
+  spawnPossibilities:
+  - Prefab: {fileID: 4565988259825387972, guid: 870943fc1de003547883c75cd68f7dfa, type: 3}
+    Weight: 1
+  - Prefab: {fileID: 912451396512666382, guid: 1598eaa129e433046a8c484adc49da5d, type: 3}
+    Weight: 1
+  - Prefab: {fileID: 285831156790626410, guid: a178dd82cb9c8fd4fa664c9ef5d17122, type: 3}
+    Weight: 1
+  - Prefab: {fileID: 285831156790626410, guid: 4f46f19ab48cabe4daf37e7de19f68b4, type: 3}
+    Weight: 1
+  - Prefab: {fileID: 285831156790626410, guid: 322bc511f83ce454cba8352f07a4bf08, type: 3}
+    Weight: 1
+  tileSpritePossibilities:
   - {fileID: -1752447679, guid: de9000e6191b2f8428f5a026ac0848be, type: 3}
   - {fileID: 2125328429, guid: de9000e6191b2f8428f5a026ac0848be, type: 3}
   - {fileID: -349717901, guid: de9000e6191b2f8428f5a026ac0848be, type: 3}

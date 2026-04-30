@@ -4,29 +4,70 @@ using UnityEngine.Tilemaps;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-    [CreateAssetMenu(menuName = "Tiles/GameObjectTile")]
+    [CreateAssetMenu(menuName = "Tiles/RandomGameObjectTile")]
     public class RandomGameObjectTile : Tile
     {
-        public GameObject[] prefabPossibilities;
-        public Sprite[] spritePossibilities;
+        public Spawn[] spawnPossibilities;
+        public Sprite[] tileSpritePossibilities;
 
-        // public new GameObject gameObject => prefabPossibilities.Length == 0
-        //     ? base.gameObject
-        //     : prefabPossibilities[
-        //         TileUtils.HashPosition(transform.GetPosition().ToVector3Int(), prefabPossibilities.Length) - 1];
-        
+        [System.Serializable]
+        public struct Spawn
+        {
+            public GameObject Prefab;
+            public float Weight;
+        }
+
         public override void GetTileData(Vector3Int position, ITilemap tilemap, ref TileData tileData)
         {
-            tileData.sprite = spritePossibilities.Length == 0
-                ? base.sprite
-                : spritePossibilities[TileUtils.HashPosition(position, spritePossibilities.Length) - 1];
+            if (tileSpritePossibilities == null || tileSpritePossibilities.Length == 0)
+            {
+                tileData.sprite = base.sprite;
+            }
+            else
+            {
+                Sprite choice =
+                    tileSpritePossibilities[
+                        TileUtils.HashPosition(position.ToVector2Int(), tileSpritePossibilities.Length)];
+                if (choice == null) tileData.sprite = base.sprite;
+                else tileData.sprite = choice;
+            }
+
             tileData.color = color;
             tileData.transform = transform;
-            tileData.gameObject = prefabPossibilities.Length == 0
-                ? base.gameObject
-                : prefabPossibilities[TileUtils.HashPosition(position, prefabPossibilities.Length) - 1];
+
+            if (spawnPossibilities == null || spawnPossibilities.Length == 0)
+            {
+                tileData.gameObject = base.gameObject;
+            }
+            else
+            {
+                Spawn spawnChoice = DeterministicWeightedRandom(position.ToVector2Int());
+                GameObject choice = spawnChoice.Prefab ?? base.gameObject;
+                tileData.gameObject = choice;
+            }
+
             tileData.flags = flags;
             tileData.colliderType = colliderType;
+        }
+
+        private Spawn DeterministicWeightedRandom(Vector2Int position)
+        {
+            float total = 0f;
+            foreach (var spawn in spawnPossibilities)
+                total += spawn.Weight;
+
+             // Seed the random generator with the tile position for consistency
+            float random = TileUtils.HashPositionFloat(position) * total; // [0, total]
+
+            float cursor = 0f;
+            for (int i = 0; i < spawnPossibilities.Length; i++)
+            {
+                cursor += spawnPossibilities[i].Weight;
+                if (cursor >= random)
+                    return spawnPossibilities[i];
+            }
+
+            return spawnPossibilities[^1]; // fallback for floating-point edge cases
         }
     }
 }

@@ -12,28 +12,39 @@ namespace MagusStudios.WaveFunctionCollapse
         public static int TILE_SIZE = 1; // In Unity Coordinate System units
 
         /// <summary>
-        /// Deterministically hashes a Vector3Int into a uniform integer in [1, n].
-        /// Produces consistent results for the same input for deterministic procedural tiling.
+        /// Deterministically hashes a Vector2Int into a uniform integer in [0, n).
         /// </summary>
-        public static int HashPosition(Vector3Int pos, int n)
+        public static int HashPosition(Vector2Int pos, int n)
         {
-            unchecked
-            {
-                int hash = pos.x * 374761393 + pos.y * 668265263 + pos.z * 2147483647;
-                hash = (hash ^ (hash >> 13)) * 1274126177;
-                hash ^= (hash >> 16);
+            Span<byte> bytes = stackalloc byte[8];
+            BinaryPrimitives.WriteInt32LittleEndian(bytes,       pos.x);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[4..],  pos.y);
 
-                return (Mathf.Abs(hash) % n) + 1;
-            }
+            var ro = (ReadOnlySpan<byte>)bytes;
+            uint h = MurmurHash3.Hash32(ref ro, seed: 0);
+
+            return (int)(h % (uint)n);
+        }
+        
+        public static float HashPositionFloat(Vector2Int pos)
+        {
+            Span<byte> bytes = stackalloc byte[8];
+            BinaryPrimitives.WriteInt32LittleEndian(bytes, pos.x);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[4..], pos.y);
+
+            ReadOnlySpan<byte> readOnly = bytes;
+            uint h = MurmurHash3.Hash32(ref readOnly, seed: 0);
+
+            return h * (1f / 4294967296f);
         }
 
-        public static uint HashWorldBlock(uint seed, Vector2Int v, byte b)
+        public static uint HashWorldBlock(uint seed, Vector2Int chunk, byte block)
         {
-            Span<byte> buffer = stackalloc byte[9]; // int x (4) + int y (4) + byte b (1)
+            Span<byte> buffer = stackalloc byte[9];
 
-            BinaryPrimitives.WriteInt32LittleEndian(buffer[0..4], v.x);
-            BinaryPrimitives.WriteInt32LittleEndian(buffer[4..8], v.y);
-            buffer[8] = b;
+            BinaryPrimitives.WriteInt32LittleEndian(buffer[0..4], chunk.x);
+            BinaryPrimitives.WriteInt32LittleEndian(buffer[4..8], chunk.y);
+            buffer[8] = block;
 
             ReadOnlySpan<byte> bytes = buffer;
 
@@ -81,12 +92,12 @@ namespace MagusStudios.WaveFunctionCollapse
             return tilePosition + Vector2.one * 0.5f * TILE_SIZE;
         }
 
-        public static int Flatten(Vector2Int position, int width, int height)
+        public static int Flatten(Vector2Int position, int width)
         {
             return position.y * width + position.x;
         }
         
-        public static Vector2Int Unflatten(int index, int width, int height)
+        public static Vector2Int Unflatten(int index, int width)
         {
             return new Vector2Int(index % width, index / width);
         }
