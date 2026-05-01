@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 38d23cffc4a91bf4c85f66dc3220977e, type: 3}
+  m_Name: newraine_flower_field
+  m_EditorClassIdentifier: 
+  TileDatabase: {fileID: 11400000, guid: d1044e963cd325249b647dec7116b323, type: 2}
+  TileRules: {fileID: 11400000, guid: d09249865cd956744ae4798be4ab1dc6, type: 2}
+  Weights: {fileID: 11400000, guid: d7125adfcc5637a4082f63a5536a2006, type: 2}
+  DefaultTileKey: 0

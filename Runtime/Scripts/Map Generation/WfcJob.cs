@@ -22,8 +22,7 @@ namespace MagusStudios.WaveFunctionCollapse
         public NativeArray<Direction> AllDirectionPermutations;
 
         // weights
-        [ReadOnly]
-        public NativeParallelHashMap<int, float> Weights;
+        [ReadOnly] public NativeParallelHashMap<int, float> Weights;
 
         [ReadOnly] public NativeArray<int> UpBorder;
         [ReadOnly] public NativeArray<int> DownBorder;
@@ -114,7 +113,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
 
                 cell.selected = -1;
-    
+
                 return cell;
             }
 
@@ -183,7 +182,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 NativeHeapIndex nativeHeapIndex = EntropyHeap.Insert(new CellEntropy()
                 {
-                    Entropy = GetEntropy(i),
+                    Entropy = CalculateEntropy(i),
                     Id = i
                 });
                 EntropyIndices[i] = nativeHeapIndex;
@@ -425,11 +424,11 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void UpdateEntropy(int cellId)
         {
-            float newEntropy = GetEntropy(cellId);
+            float newEntropy = CalculateEntropy(cellId);
 
             // When we retrieve the lowest entropy cell, we want to ignore any already collapsed cells, so we remove 
             // them from the entropy heap
-            if (newEntropy <= 0)
+            if (Cells[cellId].domainCount <= 1)
             {
                 NativeHeapIndex index = EntropyIndices[cellId];
                 if (!EntropyHeap.IsValidIndex(index)) return;
@@ -443,8 +442,8 @@ namespace MagusStudios.WaveFunctionCollapse
             EntropyIndices[cellId] = nativeHeapIndex;
         }
 
-        // Calculate entropy based on a cell's domain 
-        private float GetEntropy(int cellId)
+        // Calculate entropy based on a cell's domain and weights
+        private float CalculateEntropy(int cellId)
         {
             var cell = Cells[cellId];
 
@@ -543,74 +542,116 @@ namespace MagusStudios.WaveFunctionCollapse
                 return;
             }
 
-            // Calculate total weight by iterating through set bits
             float totalWeight = 0;
-
             int tileCount = Weights.Count();
 
-            // Check domainMask0 (tiles 0-63)
             ulong mask0 = cell.domainMask0;
+            ulong mask1 = cell.domainMask1;
+
+            // Compute total weight
             for (int bitIndex = 0; bitIndex < tileCount && bitIndex < 64; bitIndex++)
             {
                 if ((mask0 & (1UL << bitIndex)) != 0)
-                {
                     totalWeight += Weights[bitIndex];
-                }
             }
 
-            // Check domainMask1 (tiles 64-127)
-            ulong mask1 = cell.domainMask1;
             for (int bitIndex = 0; bitIndex + 64 < tileCount && bitIndex < 64; bitIndex++)
             {
                 if ((mask1 & (1UL << bitIndex)) != 0)
-                {
                     totalWeight += Weights[64 + bitIndex];
-                }
             }
 
-            // Make weighted random choice
-            float choice = random.NextFloat() * totalWeight;
-            float cumulative = 0;
             int selected = -1;
 
-            // Check domainMask0
-            mask0 = cell.domainMask0;
-            for (int bitIndex = 0; bitIndex < tileCount && bitIndex < 64; bitIndex++)
+            // -------- NEW: Uniform fallback --------
+            if (totalWeight <= 0f)
             {
-                if ((mask0 & (1UL << bitIndex)) != 0)
+                // Pick a random index among valid domain entries
+                int target = random.NextInt(cell.domainCount); // 0 .. domainCount-1
+                int count = 0;
+
+                // Scan mask0
+                for (int bitIndex = 0; bitIndex < tileCount && bitIndex < 64; bitIndex++)
                 {
-                    cumulative += Weights[bitIndex];
-                    if (choice < cumulative)
+                    if ((mask0 & (1UL << bitIndex)) != 0)
                     {
-                        selected = bitIndex;
-                        break;
+                        if (count == target)
+                        {
+                            selected = bitIndex;
+                            break;
+                        }
+
+                        count++;
+                    }
+                }
+
+                // Scan mask1 if needed
+                if (selected == -1)
+                {
+                    for (int bitIndex = 0; bitIndex + 64 < tileCount && bitIndex < 64; bitIndex++)
+                    {
+                        if ((mask1 & (1UL << bitIndex)) != 0)
+                        {
+                            if (count == target)
+                            {
+                                selected = 64 + bitIndex;
+                                break;
+                            }
+
+                            count++;
+                        }
                     }
                 }
             }
-
-            // If not found in mask0, check domainMask1
-            if (selected == -1)
+            else
             {
-                mask1 = cell.domainMask1;
-                for (int bitIndex = 0; bitIndex + 64 < tileCount && bitIndex < 64; bitIndex++)
+                // -------- Original weighted selection --------
+                float choice = random.NextFloat() * totalWeight;
+                float cumulative = 0;
+
+                // Check mask0
+                for (int bitIndex = 0; bitIndex < tileCount && bitIndex < 64; bitIndex++)
                 {
-                    if ((mask1 & (1UL << bitIndex)) != 0)
+                    if ((mask0 & (1UL << bitIndex)) != 0)
                     {
-                        cumulative += Weights[64 + bitIndex];
+                        cumulative += Weights[bitIndex];
                         if (choice < cumulative)
                         {
-                            selected = 64 + bitIndex;
+                            selected = bitIndex;
                             break;
+                        }
+                    }
+                }
+
+                // Check mask1
+                if (selected == -1)
+                {
+                    for (int bitIndex = 0; bitIndex + 64 < tileCount && bitIndex < 64; bitIndex++)
+                    {
+                        if ((mask1 & (1UL << bitIndex)) != 0)
+                        {
+                            cumulative += Weights[64 + bitIndex];
+                            if (choice < cumulative)
+                            {
+                                selected = 64 + bitIndex;
+                                break;
+                            }
                         }
                     }
                 }
             }
 
-            // Collapse domain to single selected value
+            // Safety check (should never fail unless something is inconsistent)
+            if (selected == -1)
+            {
+                if (Flag == State.OK)
+                    Flag = State.ERROR;
+                return;
+            }
+
             cell.Collapse(selected);
             Cells[cellId] = cell;
 
-            // Update entropy
             UpdateEntropy(cellId);
         }
 

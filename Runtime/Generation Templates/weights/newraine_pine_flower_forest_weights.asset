@@ -1,0 +1,129 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c295fc148608d254a9e29021220f7ad1, type: 3}
+  m_Name: newraine_pine_flower_forest_weights
+  m_EditorClassIdentifier: 
+  DefaultWeight: 0
+  Weights:
+    _serializedList:
+    - Key: 0
+      Value: 5
+    - Key: 1
+      Value: 0
+    - Key: 2
+      Value: 0
+    - Key: 3
+      Value: 0
+    - Key: 4
+      Value: 0
+    - Key: 5
+      Value: 0
+    - Key: 6
+      Value: 0
+    - Key: 7
+      Value: 0
+    - Key: 8
+      Value: 0
+    - Key: 9
+      Value: 0
+    - Key: 10
+      Value: 0
+    - Key: 11
+      Value: 0
+    - Key: 12
+      Value: 0
+    - Key: 13
+      Value: 0
+    - Key: 14
+      Value: 0
+    - Key: 15
+      Value: 0
+    - Key: 16
+      Value: 0
+    - Key: 17
+      Value: 0
+    - Key: 18
+      Value: 0
+    - Key: 19
+      Value: 0
+    - Key: 20
+      Value: 0
+    - Key: 21
+      Value: 0
+    - Key: 22
+      Value: 0
+    - Key: 23
+      Value: 0
+    - Key: 24
+      Value: 0
+    - Key: 25
+      Value: 0
+    - Key: 26
+      Value: 0
+    - Key: 27
+      Value: 0
+    - Key: 28
+      Value: 0
+    - Key: 29
+      Value: 0
+    - Key: 30
+      Value: 0
+    - Key: 31
+      Value: 0
+    - Key: 32
+      Value: 0
+    - Key: 33
+      Value: 0
+    - Key: 34
+      Value: 0
+    - Key: 35
+      Value: 0
+    - Key: 36
+      Value: 0
+    - Key: 37
+      Value: 0
+    - Key: 38
+      Value: 0
+    - Key: 39
+      Value: 0
+    - Key: 40
+      Value: 0
+    - Key: 41
+      Value: 0
+    - Key: 42
+      Value: 0
+    - Key: 43
+      Value: 0
+    - Key: 44
+      Value: 0
+    - Key: 45
+      Value: 0
+    - Key: 46
+      Value: 0
+    - Key: 47
+      Value: 1
+    - Key: 48
+      Value: 1
+    - Key: 49
+      Value: 6
+    - Key: 50
+      Value: 0
+    - Key: 51
+      Value: 0
+    - Key: 52
+      Value: 0
+    - Key: 53
+      Value: 0
+    - Key: 54
+      Value: 0
+    - Key: 55
+      Value: 5

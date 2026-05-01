@@ -90,7 +90,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     actionOnRelease: worldSpawn => worldSpawn.gameObject.SetActive(false),
                     actionOnDestroy: worldSpawn => Destroy(worldSpawn.gameObject),
                     defaultCapacity: 32,
-                    maxSize: 1000
+                    maxSize: 2048
                 );
                 _spawnPools[prefab] = pool;
             }

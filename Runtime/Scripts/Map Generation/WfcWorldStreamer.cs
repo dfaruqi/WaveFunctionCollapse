@@ -479,19 +479,19 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         private void GetUnloadedChunksInLoadDistance(Vector2Int playerChunkPosition,
-            ref HashSet<Vector2Int> chunksToLoadOrGenerate)
+            ref HashSet<Vector2Int> unloadedChunksInLoadDistance)
         {
-            chunksToLoadOrGenerate.Clear();
+            unloadedChunksInLoadDistance.Clear();
 
-            int chunkCeilX = drawDistance + 3;
-            int chunkCeilY = drawDistance + 2;
+            int chunkCeilX = drawDistance + 1;
+            int chunkCeilY = drawDistance + 1;
 
             for (int y = -chunkCeilY; y <= chunkCeilY; y++)
             {
                 for (int x = -chunkCeilX; x <= chunkCeilX; x++)
                 {
                     Vector2Int chunkPos = playerChunkPosition + new Vector2Int(x, y);
-                    if (!_loadedChunks.ContainsKey(chunkPos)) chunksToLoadOrGenerate.Add(chunkPos);
+                    if (!_loadedChunks.ContainsKey(chunkPos)) unloadedChunksInLoadDistance.Add(chunkPos);
                 }
             }
         }

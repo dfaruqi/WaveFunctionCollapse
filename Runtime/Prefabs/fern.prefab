@@ -73,8 +73,8 @@ SpriteRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
+  m_SortingLayerID: 572667703
+  m_SortingLayer: 1
   m_SortingOrder: 0
   m_Sprite: {fileID: -1814981761, guid: e8164dd6c6cc5ec4baee3a359f8ee8f5, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -96,7 +96,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8558849341967784262}
-  - component: {fileID: 5183408715606730346}
+  - component: {fileID: 726098340375577610}
   m_Layer: 0
   m_Name: fern
   m_TagString: Untagged
@@ -120,7 +120,7 @@ Transform:
   - {fileID: 8507434872833169994}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!210 &5183408715606730346
+--- !u!210 &726098340375577610
 SortingGroup:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
