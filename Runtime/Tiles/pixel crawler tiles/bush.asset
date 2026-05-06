@@ -9,7 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 13312, guid: 0000000000000000e000000000000000, type: 0}
+  m_Script: {fileID: 11500000, guid: beae97538c3876345b52a7626f849c40, type: 3}
   m_Name: bush
   m_EditorClassIdentifier: 
   m_Sprite: {fileID: 667726452, guid: 97302feb356ae704982291096d877297, type: 3}
@@ -31,6 +31,7 @@ MonoBehaviour:
     e31: 0
     e32: 0
     e33: 1
-  m_InstancedGameObject: {fileID: 5175393040003911526, guid: a95b6004ff88e3942aa661be8fbde942, type: 3}
+  m_InstancedGameObject: {fileID: 0}
   m_Flags: 1
   m_ColliderType: 1
+  Prefab: {fileID: 5175393040003911526, guid: a95b6004ff88e3942aa661be8fbde942, type: 3}

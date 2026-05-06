@@ -10,13 +10,13 @@ namespace MagusStudios.WaveFunctionCollapse
     {
         public readonly NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer> EntropyHeap;
         public readonly NativeArray<NativeHeapIndex> EntropyIndices;
-        public readonly NativeArray<WfcJob.Cell> Cells;
+        public NativeArray<WfcJob.Cell> Cells;
         public readonly NativeArray<int> PropagationStack;
         public readonly NativeArray<int> Output;
-        public readonly NativeArray<int> UpBorder;
-        public readonly NativeArray<int> DownBorder;
-        public readonly NativeArray<int> LeftBorder;
-        public readonly NativeArray<int> RightBorder;
+        public NativeArray<int> UpBorder;
+        public NativeArray<int> DownBorder;
+        public NativeArray<int> LeftBorder;
+        public NativeArray<int> RightBorder;
         public NativeParallelHashMap<int, float> Weights;
 
         public WfcBlockState(Vector2Int size, int moduleCount, WfcTemplate template, Unity.Mathematics.Random rng, WfcUtils.Borders borders = default)
@@ -49,17 +49,6 @@ namespace MagusStudios.WaveFunctionCollapse
             for (int i = 0; i < cellCount; i++)
             {
                 Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
-            }
-
-            // domains
-            NativeArray<WfcJob.Cell> cells = new NativeArray<WfcJob.Cell>(cellCount, Allocator.Persistent);
-
-            // fill domains with all tiles to start
-            for (int i = 0;
-                 i < cellCount;
-                 i++)
-            {
-                cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
             }
 
             // === Initialize Stack for Propagation Step
@@ -120,6 +109,52 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
+        // Reinitializes mutable state in-place. Called on pool rent.
+        public void Reset(Vector2Int size, int moduleCount, WfcTemplate template, Unity.Mathematics.Random rng, WfcUtils.Borders borders = default)
+        {
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
+
+            // ── Weights ──────────────────────────────────────────────────────────
+            Weights.Clear();
+            int moduleIndex = 0;
+            foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
+            {
+                Weights.Add(moduleIndex, template.Weights[kvp.Key]);
+                moduleIndex++;
+            }
+
+            // ── Entropy heap ──────────────────────────────────────────────────────
+            // EntropyIndices is written by the job before it reads it — no reset needed.
+            EntropyHeap.Clear();
+
+            // ── Cells ─────────────────────────────────────────────────────────────
+            int cellCount = size.x * size.y;
+            for (int i = 0; i < cellCount; i++)
+                Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
+
+            // ── Borders ───────────────────────────────────────────────────────────
+            // Arrays are fixed-size from construction; fill up to their allocated length.
+            List<int> bordersUp    = borders.BorderUp;
+            List<int> bordersDown  = borders.BorderDown;
+            List<int> bordersLeft  = borders.BorderLeft;
+            List<int> bordersRight = borders.BorderRight;
+
+            for (int i = 0; i < UpBorder.Length; i++)
+                UpBorder[i] = bordersUp != null ? bordersUp[i] : 0;
+
+            for (int i = 0; i < DownBorder.Length; i++)
+                DownBorder[i] = bordersDown != null ? bordersDown[i] : 0;
+
+            for (int i = 0; i < LeftBorder.Length; i++)
+                LeftBorder[i] = bordersLeft != null ? bordersLeft[i] : 0;
+
+            for (int i = 0; i < RightBorder.Length; i++)
+                RightBorder[i] = bordersRight != null ? bordersRight[i] : 0;
+
+            // PropagationStack — job resets via PropagationStackTop = 0, no fill needed.
+            // Output           — fully overwritten by the job, no fill needed.
+        }
+        
         public void Dispose()
         {
             EntropyHeap.Dispose();

@@ -13,7 +13,7 @@ namespace MagusStudios.WaveFunctionCollapse
             public WfcTemplate template;
         }
 
-        [SerializeField] private BiomeEntry[] entries;
+        [SerializeField] private BiomeEntry[] templates;
         [SerializeField] private float noiseScale = 0.15f;
 
         // Cached cumulative thresholds, built once on first use.
@@ -21,18 +21,18 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private float[] GetThresholds()
         {
-            if (_thresholds != null && _thresholds.Length == entries.Length)
+            if (_thresholds != null && _thresholds.Length == templates.Length)
                 return _thresholds;
 
-            _thresholds = new float[entries.Length];
+            _thresholds = new float[templates.Length];
             float total = 0f;
-            foreach (var e in entries) total += e.weight;
+            foreach (var e in templates) total += e.weight;
 
             float cumulative = 0f;
-            for (int i = 0; i < entries.Length; i++)
+            for (int i = 0; i < templates.Length; i++)
             {
-                cumulative += entries[i].weight;
-                _thresholds[i] = total > 0f ? cumulative / total : (float)(i + 1) / entries.Length;
+                cumulative += templates[i].weight;
+                _thresholds[i] = total > 0f ? cumulative / total : (float)(i + 1) / templates.Length;
             }
 
             return _thresholds;
@@ -49,12 +49,12 @@ namespace MagusStudios.WaveFunctionCollapse
         public WfcTemplate GetTemplateFromNoise(float noise)
         {
             float[] thresholds = GetThresholds();
-            for (int i = 0; i < entries.Length - 1; i++)
+            for (int i = 0; i < templates.Length - 1; i++)
             {
                 if (noise < thresholds[i])
-                    return entries[i].template;
+                    return templates[i].template;
             }
-            return entries[^1].template;
+            return templates[^1].template;
         }
 
 #if UNITY_EDITOR

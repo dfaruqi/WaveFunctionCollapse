@@ -22,6 +22,9 @@ namespace MagusStudios.WaveFunctionCollapse
         public Tilemap TargetTilemap; // The target tilemap to generate the world upon
         public uint Seed;
 
+        [SerializeField]
+        private int generateDistance = 1; //increasing this causes a memory leak idk why just don't touch it lol
+
         [SerializeField] int drawDistance = 1;
         [SerializeField] bool clearOnStart = true;
         [SerializeField] Biome biome;
@@ -60,13 +63,14 @@ namespace MagusStudios.WaveFunctionCollapse
 
         // the last chunk the player was in, used to determine when to update chunks
         private Vector2Int _lastPlayerChunk = new(int.MaxValue, int.MaxValue);
-        
-        // cached containers used in generation to avoid reallocation. Cleared every chunk update.
+
+        // cached containers used in chunks updates to avoid reallocation. 
         private HashSet<Vector2Int> _unloadedChunksInLoadDistance = new();
         private readonly HashSet<Vector2Int> _chunksPregenerated = new();
         private readonly HashSet<Vector2Int> _chunksUnloaded = new();
-        private HashSet<Vector2Int> _chunksInDrawDistance = new();
+        private HashSet<Vector2Int> _chunksInGenerateDistance = new();
         private readonly HashSet<Vector2Int> _chunksAffectedByGeneration = new();
+        private readonly HashSet<Vector2Int> _chunksInDrawDistance = new();
         private readonly HashSet<Vector2Int> _chunksToDraw = new();
         private HashSet<Vector2Int> _chunksToUndraw = new();
         private HashSet<Vector2Int> _chunksToUnload = new();
@@ -74,6 +78,8 @@ namespace MagusStudios.WaveFunctionCollapse
         private readonly List<Task> _saveTasks = new();
         private readonly TileBase[] _tileDrawBuffer = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
         private readonly TileBase[] _nullTileBuffer = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
+        private readonly Stack<WfcBlockState> _blockStatePool = new();
+        private Func<bool> _allJobsCompleted;
 
         // ~ Events ~
 
@@ -126,15 +132,25 @@ namespace MagusStudios.WaveFunctionCollapse
                 TargetTilemap.RefreshAllTiles();
                 TargetTilemap.ClearAllTiles();
             }
-            
+
             // initialize blocks to generate array
-            for(int i = 0; i < _blocksToGenerate.Length; i++)
+            for (int i = 0; i < _blocksToGenerate.Length; i++)
             {
                 _blocksToGenerate[i] = new HashSet<Vector2Int>();
             }
 
             // load all generated chunk coords
             _ = InitializeAsync();
+
+            _allJobsCompleted = AllJobsCompleted;
+        }
+
+        private bool AllJobsCompleted()
+        {
+            foreach (JobHandle h in _jobHandles)
+                if (!h.IsCompleted)
+                    return false;
+            return true;
         }
 
         private void OnEnable()
@@ -205,10 +221,10 @@ namespace MagusStudios.WaveFunctionCollapse
                 hashSet?.Clear();
             }
 
-            _chunksInDrawDistance.Clear();
-            GetChunksInDistance(playerChunkPosition, drawDistance, ref _chunksInDrawDistance);
+            _chunksInGenerateDistance.Clear();
+            GetChunksInDistance(playerChunkPosition, generateDistance, _chunksInGenerateDistance);
 
-            foreach (Vector2Int chunk in _chunksInDrawDistance)
+            foreach (Vector2Int chunk in _chunksInGenerateDistance)
             {
                 if (_allGeneratedBlocks[chunk] < 4) _blocksToGenerate[3].Add(chunk);
             }
@@ -234,7 +250,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // unload chunks
             _chunksToUnload.Clear();
-            GetChunksOutsideDistance(playerChunkPosition, drawDistance + 3, _loadedChunks.Keys,
+            GetChunksOutsideDistance(playerChunkPosition, generateDistance + 3, _loadedChunks.Keys,
                 ref _chunksToUnload);
 
             foreach (Vector2Int chunkPos in _chunksToUnload)
@@ -286,12 +302,18 @@ namespace MagusStudios.WaveFunctionCollapse
 
             Task saveAll = Task.WhenAll(_saveTasks);
             bool allChunksSaved;
-            do {
+            do
+            {
                 allChunksSaved = true;
                 for (int i = 0; i < _jobHandles.Count; i++)
                 {
-                    if (!_jobHandles[i].IsCompleted) { allChunksSaved = false; break; }
+                    if (!_jobHandles[i].IsCompleted)
+                    {
+                        allChunksSaved = false;
+                        break;
+                    }
                 }
+
                 if (!allChunksSaved) yield return null;
             } while (!allChunksSaved);
 
@@ -303,16 +325,19 @@ namespace MagusStudios.WaveFunctionCollapse
             // get all chunks within draw distance that are not drawn or should be redrawn because generation affected
             // them (at the edges)
             _chunksToDraw.Clear();
+            _chunksInDrawDistance.Clear();
+            GetChunksInDistance(playerChunkPosition, drawDistance, _chunksInDrawDistance);
             foreach (Vector2Int c in _chunksInDrawDistance)
             {
-                if (!_drawnChunks.Contains(c) || _chunksAffectedByGeneration.Contains(c))
+                if (!_drawnChunks.Contains(c) || (_drawnChunks.Contains(c) && _chunksAffectedByGeneration.Contains(c)))
                     _chunksToDraw.Add(c);
             }
+
             yield return StartCoroutine(DrawChunks(_chunksToDraw));
 
             // un-draw chunks that are drawn and outside draw distance
             _chunksToUndraw.Clear();
-            GetChunksOutsideDistance(playerChunkPosition, drawDistance + 1, _drawnChunks,
+            GetChunksOutsideDistance(playerChunkPosition, generateDistance + 1, _drawnChunks,
                 ref _chunksToUndraw);
             foreach (Vector2Int chunkPos in _chunksToUndraw)
             {
@@ -373,43 +398,46 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
+
+        // ── Optimized GenerateBlocks ──────────────────────────────────────────────
         private IEnumerator GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
         {
-            // create a dictionary to track all the wave function collapse runs
-            Dictionary<Vector2Int, WfcBlockState> stateDict = new();
+            // Pre-size to avoid rehashing; count distinct chunks across all layers.
+            int totalDistinct = 0;
+            foreach (var set in blocksToGenerate) totalDistinct += set.Count;
 
-            // Create the global data for each sub-biome (this data will be accessed in parallel by the wfc runs)
-            Dictionary<Vector2Int, WfcBiomeData> biomeGlobalsDict = new Dictionary<Vector2Int, WfcBiomeData>();
+            Dictionary<Vector2Int, WfcBlockState> stateDict = new(totalDistinct);
+            Dictionary<Vector2Int, WfcBiomeData> biomeGlobalsDict = new(totalDistinct);
+
             for (int layer = 0; layer < blocksToGenerate.Length; layer++)
             {
                 foreach (Vector2Int chunk in blocksToGenerate[layer])
                 {
+                    // Single lookup instead of ContainsKey + indexer.
                     if (!biomeGlobalsDict.ContainsKey(chunk))
                         biomeGlobalsDict[chunk] = new WfcBiomeData(biome.GetTemplate(chunk));
                 }
             }
 
-            // generate the chunks in 4 overlapping layers using the layered-block-evaluation approach
             for (byte layer = 0; layer < 4; layer++)
             {
                 foreach (Vector2Int chunk in blocksToGenerate[layer])
                 {
+                    // Single lookup.
                     WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunk];
                     WfcTemplate template = wfcBiomeData.Template;
-                    // get the template and 
 
-                    // Create rng
                     Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, layer));
-
-                    // get the border information for this block from loaded chunks
                     WfcUtils.Borders borders = GetBordersOfBlock(chunk, layer, wfcBiomeData.moduleKeyToIndex);
-                    WfcBlockState wfcBlockState = new WfcBlockState(new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
-                        template.TileRules.Modules.Count, template, rng, borders);
 
-                    // add to state dict to keep track of this run of wfc
+                    // Rent from pool instead of allocating a new one, as these are relatively expensive to reallocate.
+                    WfcBlockState wfcBlockState = RentBlockState(
+                        new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
+                        template.TileRules.Modules.Count,
+                        template, rng, borders);
+
                     stateDict.Add(chunk, wfcBlockState);
 
-                    // === Create and schedule the job ===
                     WfcJob wfc = new WfcJob
                     {
                         Modules = wfcBiomeData.Modules,
@@ -431,51 +459,71 @@ namespace MagusStudios.WaveFunctionCollapse
                         Flag = WfcJob.State.OK
                     };
 
-                    // generate the block
                     _jobHandles.Add(wfc.Schedule());
                 }
 
-                yield return new WaitUntil(() => { return _jobHandles.All(jobHandle => jobHandle.IsCompleted); });
+                // No closure allocation — reuses the cached field delegate.
+                yield return new WaitUntil(_allJobsCompleted);
 
                 foreach (JobHandle jobHandle in _jobHandles)
-                {
                     jobHandle.Complete();
-                }
 
                 _jobHandles.Clear();
 
-                // Update the affected loaded chunks--the changes will be needed for future passes
                 foreach (KeyValuePair<Vector2Int, WfcBlockState> kvp in stateDict)
                 {
                     Vector2Int chunkPosition = kvp.Key;
                     WfcBlockState wfcBlockState = kvp.Value;
-
                     WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunkPosition];
 
-                    // If has error in output, fall back to previous layer, otherwise update the loaded chunks
-
-                    bool valid = IsOutputValid(wfcBlockState.Output, chunkPosition, layer,
+                    bool valid = IsOutputValid(
+                        wfcBlockState.Output, chunkPosition, layer,
                         wfcBiomeData.moduleIndexToKey);
-                    if (!valid)
-                        Debug.LogWarning($"[{nameof(WfcWorldStreamer)}] Error in chunk {chunkPosition} on layer {layer}");
-                    else
-                    {
-                        UpdateChunksFromBlock(chunkPosition, layer, wfcBlockState.Output, wfcBiomeData.moduleIndexToKey,
-                            wfcBiomeData.Template.DefaultTileKey);
-                    }
 
-                    // clean up state
-                    wfcBlockState.Dispose();
+                    if (!valid)
+                        Debug.LogWarning(
+                            $"[{nameof(WfcWorldStreamer)}] Error in chunk {chunkPosition} on layer {layer}");
+                    else
+                        UpdateChunksFromBlock(
+                            chunkPosition, layer, wfcBlockState.Output,
+                            wfcBiomeData.moduleIndexToKey,
+                            wfcBiomeData.Template.DefaultTileKey);
+
+                    // Return to pool instead of disposing.
+                    ReturnBlockState(wfcBlockState);
                 }
 
                 stateDict.Clear();
             }
 
-            // clean up shared biome data
             foreach (var kvp in biomeGlobalsDict)
-            {
                 kvp.Value.Dispose();
+        }
+
+        // Pool helpers for generation
+        private WfcBlockState RentBlockState(
+            Vector2Int size, int moduleCount, WfcTemplate template,
+            Random rng, WfcUtils.Borders borders)
+        {
+            // Only reuse if the pooled state is size-compatible.
+            if (_blockStatePool.TryPop(out WfcBlockState pooled))
+            {
+                pooled.Reset(size, moduleCount, template, rng, borders);
+                return pooled;
             }
+
+            // Pooled state was wrong size (or pool was empty) — make a fresh one.
+            if (pooled != null) pooled.Dispose(); // discard the incompatible one
+            return new WfcBlockState(size, moduleCount, template, rng, borders);
+        }
+
+        private void ReturnBlockState(WfcBlockState state) => _blockStatePool.Push(state);
+
+        // On teardown, drain the pool
+        private void OnDestroy()
+        {
+            while (_blockStatePool.TryPop(out WfcBlockState s))
+                s.Dispose();
         }
 
         private void GetUnloadedChunksInLoadDistance(Vector2Int playerChunkPosition,
@@ -483,8 +531,8 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             unloadedChunksInLoadDistance.Clear();
 
-            int chunkCeilX = drawDistance + 1;
-            int chunkCeilY = drawDistance + 1;
+            int chunkCeilX = generateDistance + 1;
+            int chunkCeilY = generateDistance + 1;
 
             for (int y = -chunkCeilY; y <= chunkCeilY; y++)
             {
@@ -510,7 +558,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void GetChunksInDistance(Vector2Int position, int distance, ref HashSet<Vector2Int> chunksInDistance)
+        private void GetChunksInDistance(Vector2Int position, int distance, HashSet<Vector2Int> chunksInDistance)
         {
             chunksInDistance.Clear();
 
@@ -605,6 +653,12 @@ namespace MagusStudios.WaveFunctionCollapse
                 int localX = i % BLOCK_SIZE;
                 int localY = i / BLOCK_SIZE;
 
+                if (output[i] < 0)
+                {
+                    Debug.Log($"Output in chunk {chunkPos} invalid at output index {i}");
+                    return false;
+                }
+
                 // tile left 
                 int leftNeighborTileKey;
                 if (localX == 0)
@@ -619,12 +673,20 @@ namespace MagusStudios.WaveFunctionCollapse
                 else
                 {
                     int leftTileNeighborIndex = output[i - 1];
-                    if (leftTileNeighborIndex < 0) return false;
+                    if (leftTileNeighborIndex < 0)
+                    {
+                        Debug.Log($"Output in chunk {chunkPos} invalid at output index {i - 1}");
+                        return false;
+                    }
+
                     leftNeighborTileKey = moduleIndexToKey[leftTileNeighborIndex];
                 }
 
                 if (!modules[leftNeighborTileKey].Neighbors[Direction.Right].Contains(output[i]))
+                {
+                    Debug.Log($"{leftNeighborTileKey} does not contain {output[i]} in its right neighbors");
                     return false;
+                }
 
                 // tile right
                 int rightNeighborTileKey;
@@ -639,12 +701,20 @@ namespace MagusStudios.WaveFunctionCollapse
                 else
                 {
                     int rightTileNeighborIndex = output[i + 1];
-                    if (rightTileNeighborIndex < 0) return false;
+                    if (rightTileNeighborIndex < 0)
+                    {
+                        Debug.Log($"Output in chunk {chunkPos} invalid at output index {i + 1}");
+                        return false;
+                    }
+
                     rightNeighborTileKey = moduleIndexToKey[rightTileNeighborIndex];
                 }
 
                 if (!modules[rightNeighborTileKey].Neighbors[Direction.Left].Contains(output[i]))
+                {
+                    Debug.Log($"{rightNeighborTileKey} does not contain {output[i]} in its left neighbors");
                     return false;
+                }
 
                 // tile up
                 int upNeighborTileKey;
@@ -659,12 +729,20 @@ namespace MagusStudios.WaveFunctionCollapse
                 else
                 {
                     int upNeighborTileIndex = output[i + BLOCK_SIZE];
-                    if (upNeighborTileIndex < 0) return false;
+                    if (upNeighborTileIndex < 0)
+                    {
+                        Debug.Log($"Output in chunk {chunkPos} invalid at output index {i + BLOCK_SIZE}");
+                        return false;
+                    }
+
                     upNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
                 }
 
                 if (!modules[upNeighborTileKey].Neighbors[Direction.Down].Contains(output[i]))
+                {
+                    Debug.Log($"{upNeighborTileKey} does not contain {output[i]} in its down neighbors");
                     return false;
+                }
 
                 // tile down
                 int downNeighborTileKey;
@@ -679,12 +757,20 @@ namespace MagusStudios.WaveFunctionCollapse
                 else
                 {
                     int downNeighborTileIndex = output[i - BLOCK_SIZE];
-                    if (downNeighborTileIndex < 0) return false;
+                    if (downNeighborTileIndex < 0)
+                    {
+                        Debug.Log($"Output in chunk {chunkPos} invalid at output index {i - BLOCK_SIZE}");
+                        return false;
+                    }
+
                     downNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
                 }
 
                 if (!modules[downNeighborTileKey].Neighbors[Direction.Up].Contains(output[i]))
+                {
+                    Debug.Log($"{downNeighborTileKey} does not contain {output[i]} in its up neighbors");
                     return false;
+                }
             }
 
             return true;

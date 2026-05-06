@@ -94,13 +94,13 @@ MonoBehaviour:
     - Key: 38
       Value: 0.5
     - Key: 39
-      Value: 0.3
+      Value: 0.15
     - Key: 40
-      Value: 0.3
+      Value: 0.15
     - Key: 41
-      Value: 0.3
+      Value: 0.15
     - Key: 42
-      Value: 0.3
+      Value: 0.15
     - Key: 43
       Value: 0.5
     - Key: 44
@@ -122,7 +122,7 @@ MonoBehaviour:
     - Key: 52
       Value: 0
     - Key: 53
-      Value: 2
+      Value: 1.7
     - Key: 54
       Value: 0
     - Key: 55

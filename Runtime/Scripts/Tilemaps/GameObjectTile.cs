@@ -8,12 +8,17 @@ namespace MagusStudios.WaveFunctionCollapse
     {
         public GameObject Prefab;
 
+        public virtual GameObject GetGameObject(Vector2Int position)
+        {
+            return Prefab;
+        }
+
         public override void GetTileData(Vector3Int position, ITilemap tilemap, ref TileData tileData)
         {
             tileData.sprite = sprite;
             tileData.color = color;
             tileData.transform = transform;
-            tileData.gameObject = Prefab ?? base.gameObject;
+            tileData.gameObject = null;
             tileData.flags = flags;
             tileData.colliderType = colliderType;
         }

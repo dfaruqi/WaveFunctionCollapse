@@ -662,7 +662,7 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <param name="enforcerDomain0">Mask representing the domain of tile ids (0-63) enforcing neighbor constraints.</param>
         /// <param name="enforcerDomain1">Mask representing the domain of tile ids (64-127) enforcing neighbor constraints.</param>
         /// <param name="direction">Direction from enforcer cell to the cell to constrain</param>
-        /// <returns></returns>
+        /// <returns>If the cell was constrained to a valid domain of 1 or more value</returns>
         private bool ConstrainCell(int cellToConstrain, ulong enforcerDomain0, ulong enforcerDomain1,
             Direction direction)
         {

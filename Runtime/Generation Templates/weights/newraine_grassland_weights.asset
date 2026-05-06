@@ -16,13 +16,13 @@ MonoBehaviour:
   Weights:
     _serializedList:
     - Key: 0
-      Value: 5
+      Value: 12
     - Key: 1
-      Value: 0
+      Value: 1
     - Key: 2
-      Value: 0
+      Value: 1
     - Key: 3
-      Value: 0
+      Value: 1
     - Key: 4
       Value: 0
     - Key: 5
@@ -30,11 +30,11 @@ MonoBehaviour:
     - Key: 6
       Value: 0
     - Key: 7
-      Value: 0
+      Value: 1
     - Key: 8
-      Value: 0
+      Value: 2
     - Key: 9
-      Value: 0
+      Value: 1
     - Key: 10
       Value: 0
     - Key: 11
@@ -48,9 +48,9 @@ MonoBehaviour:
     - Key: 15
       Value: 0
     - Key: 16
-      Value: 0
+      Value: 1
     - Key: 17
-      Value: 0
+      Value: 1
     - Key: 18
       Value: 0
     - Key: 19
@@ -74,15 +74,15 @@ MonoBehaviour:
     - Key: 28
       Value: 0
     - Key: 29
-      Value: 0
+      Value: 1
     - Key: 30
-      Value: 0
+      Value: 1
     - Key: 31
-      Value: 0
+      Value: 1
     - Key: 32
-      Value: 0
+      Value: 1
     - Key: 33
-      Value: 0
+      Value: 1
     - Key: 34
       Value: 0
     - Key: 35
@@ -110,11 +110,11 @@ MonoBehaviour:
     - Key: 46
       Value: 0
     - Key: 47
-      Value: 1
+      Value: 0.7
     - Key: 48
-      Value: 1
+      Value: 0.7
     - Key: 49
-      Value: 6
+      Value: 0.8
     - Key: 50
       Value: 0
     - Key: 51
@@ -126,4 +126,4 @@ MonoBehaviour:
     - Key: 54
       Value: 0
     - Key: 55
-      Value: 5
+      Value: 1.2

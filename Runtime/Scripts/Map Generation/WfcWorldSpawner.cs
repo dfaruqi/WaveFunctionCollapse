@@ -46,7 +46,7 @@ namespace MagusStudios.WaveFunctionCollapse
             for (int i = 0; i < chunkData.Count; i++)
             {
                 var tile = biome.GetTemplate(chunkPos).TileDatabase[chunkData[i]];
-                if (tile is not RandomGameObjectTile gameObjectTile)
+                if (tile is not GameObjectTile gameObjectTile)
                     continue;
 
                 int localX = i % chunkSize;
@@ -55,7 +55,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     TileUtils.GetWorldPosition(chunkPos, new Vector2Int(localX, localY), chunkSize);
                 Vector2 cellCenterPos = TileUtils.GetTileCenterPosition(cellWorldPos);
 
-                GameObject prefab = gameObjectTile.gameObject;
+                GameObject prefab = gameObjectTile.GetGameObject(cellWorldPos);
                 ObjectPool<WorldSpawn> pool = GetOrCreatePool(prefab);
                 WorldSpawn spawn = pool.Get();
                 spawn.transform.position = cellCenterPos;

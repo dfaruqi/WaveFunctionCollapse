@@ -34,6 +34,7 @@ MonoBehaviour:
   m_InstancedGameObject: {fileID: 5175393040003911526, guid: 2d54b0e005f312a4e9fb95f7bcd958a6, type: 3}
   m_Flags: 1
   m_ColliderType: 1
+  Prefab: {fileID: 0}
   spawnPossibilities:
   - Prefab: {fileID: 232473318689221817, guid: ab4816b6135fc0b4ca90e358a0c5ace7, type: 3}
     Weight: 0.5

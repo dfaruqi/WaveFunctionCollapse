@@ -12,9 +12,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 051349e257dd4d45bf2da12586c16229, type: 3}
   m_Name: Newraine_test
   m_EditorClassIdentifier: 
-  entries:
+  templates:
+  - weight: 1
+    template: {fileID: 11400000, guid: fe18a477e2bf00a40beac91dfe33ae37, type: 2}
   - weight: 1
     template: {fileID: 11400000, guid: de04415dab4612d489d1f55165bebc07, type: 2}
   - weight: 1
+    template: {fileID: 11400000, guid: 99688ff66e8767f4c8597e0c0b510a9d, type: 2}
+  - weight: 1
     template: {fileID: 11400000, guid: e57ede7531969424b87885c284635331, type: 2}
-  noiseScale: 0.15
+  noiseScale: 0.3

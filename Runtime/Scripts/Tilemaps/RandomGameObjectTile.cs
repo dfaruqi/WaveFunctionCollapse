@@ -5,7 +5,7 @@ using UnityEngine.Tilemaps;
 namespace MagusStudios.WaveFunctionCollapse
 {
     [CreateAssetMenu(menuName = "Tiles/RandomGameObjectTile")]
-    public class RandomGameObjectTile : Tile
+    public class RandomGameObjectTile : GameObjectTile
     {
         public Spawn[] spawnPossibilities;
         public Sprite[] tileSpritePossibilities;
@@ -35,21 +35,30 @@ namespace MagusStudios.WaveFunctionCollapse
             tileData.color = color;
             tileData.transform = transform;
 
-            if (spawnPossibilities == null || spawnPossibilities.Length == 0)
-            {
-                tileData.gameObject = base.gameObject;
-            }
-            else
-            {
-                Spawn spawnChoice = DeterministicWeightedRandom(position.ToVector2Int());
-                GameObject choice = spawnChoice.Prefab ?? base.gameObject;
-                tileData.gameObject = choice;
-            }
+            // if (spawnPossibilities == null || spawnPossibilities.Length == 0)
+            // {
+            //     tileData.gameObject = base.gameObject;
+            // }
+            // else
+            // {
+            //     Spawn spawnChoice = DeterministicWeightedRandom(position.ToVector2Int());
+            //     GameObject choice = spawnChoice.Prefab ?? base.gameObject;
+            //     tileData.gameObject = choice;
+            // }
+            tileData.gameObject = null; // Spawns are handled separately in the WfcWorldStreamer when drawing chunks,
+                                        // so we don't want the tilemap to instantiate anything on its own.
 
             tileData.flags = flags;
             tileData.colliderType = colliderType;
         }
 
+        public override GameObject GetGameObject(Vector2Int position)
+        {
+            Spawn spawnChoice = DeterministicWeightedRandom(position);
+            GameObject choice = spawnChoice.Prefab;
+            return choice;
+        }
+        
         private Spawn DeterministicWeightedRandom(Vector2Int position)
         {
             float total = 0f;
