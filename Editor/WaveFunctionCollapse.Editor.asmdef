@@ -1,6 +1,15 @@
 {
   "name": "MagusStudios.WaveFunctionCollapse.Editor",
   "rootNamespace": "MagusStudios.WaveFunctionCollapse.Editor",
-  "includePlatforms": ["Editor"],
-  "references": ["MagusStudios.WaveFunctionCollapse", "AYellowpaper.SerializedCollections", "Unity.TextMeshPro", "Unity.Mathematics"]
+  "includePlatforms": [
+    "Editor"
+  ],
+  "references": [
+    "MagusStudios.WaveFunctionCollapse",
+    "AYellowpaper.SerializedCollections",
+    "Unity.TextMeshPro",
+    "Unity.Mathematics",
+    "Unity.2D.Tilemap.Extras",
+    "Unity.2D.Tilemap.Extras.Editor"
+  ]
 }

@@ -18,11 +18,11 @@ MonoBehaviour:
     - Key: 0
       Value: 8
     - Key: 1
-      Value: 0
+      Value: 0.6
     - Key: 2
-      Value: 0
+      Value: 0.6
     - Key: 3
-      Value: 0
+      Value: 0.6
     - Key: 4
       Value: 0
     - Key: 5
@@ -30,11 +30,11 @@ MonoBehaviour:
     - Key: 6
       Value: 0
     - Key: 7
-      Value: 0
+      Value: 0.6
     - Key: 8
-      Value: 0
+      Value: 0.6
     - Key: 9
-      Value: 0
+      Value: 0.6
     - Key: 10
       Value: 0
     - Key: 11
@@ -48,9 +48,9 @@ MonoBehaviour:
     - Key: 15
       Value: 0
     - Key: 16
-      Value: 0
+      Value: 0.6
     - Key: 17
-      Value: 0
+      Value: 0.6
     - Key: 18
       Value: 0
     - Key: 19
@@ -74,15 +74,15 @@ MonoBehaviour:
     - Key: 28
       Value: 0
     - Key: 29
-      Value: 0
+      Value: 0.6
     - Key: 30
-      Value: 0
+      Value: 0.6
     - Key: 31
-      Value: 0
+      Value: 0.6
     - Key: 32
-      Value: 0
+      Value: 0.6
     - Key: 33
-      Value: 0
+      Value: 0.6
     - Key: 34
       Value: 0
     - Key: 35
@@ -102,21 +102,21 @@ MonoBehaviour:
     - Key: 42
       Value: 0
     - Key: 43
-      Value: 0
+      Value: 1.8
     - Key: 44
       Value: 0
     - Key: 45
       Value: 0
     - Key: 46
-      Value: 0
+      Value: 0.2
     - Key: 47
-      Value: 2.4
-    - Key: 48
-      Value: 2.4
-    - Key: 49
-      Value: 1
-    - Key: 50
       Value: 0
+    - Key: 48
+      Value: 0
+    - Key: 49
+      Value: 0
+    - Key: 50
+      Value: 0.4
     - Key: 51
       Value: 0
     - Key: 52

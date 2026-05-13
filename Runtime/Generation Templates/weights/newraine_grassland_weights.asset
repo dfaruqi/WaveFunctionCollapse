@@ -102,19 +102,19 @@ MonoBehaviour:
     - Key: 42
       Value: 0
     - Key: 43
-      Value: 0
+      Value: 0.2
     - Key: 44
       Value: 0
     - Key: 45
       Value: 0
     - Key: 46
-      Value: 0
+      Value: 0.2
     - Key: 47
-      Value: 0.7
+      Value: 0
     - Key: 48
-      Value: 0.7
+      Value: 0
     - Key: 49
-      Value: 0.8
+      Value: 0
     - Key: 50
       Value: 0
     - Key: 51

@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Tilemaps;
@@ -14,16 +15,47 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <summary>
         /// Deterministically hashes a Vector2Int into a uniform integer in [0, n).
         /// </summary>
-        public static int HashPosition(Vector2Int pos, int n)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int HashPosition(Vector2Int pos, int n) => HashPosition(pos.x, pos.y, n);
+
+        /// <summary>
+        /// Deterministically hashes (x, y) into a uniform integer in [0, n).
+        /// Specialized inline MurmurHash3 over exactly two uints — no buffer, no loop, no modulo.
+        /// Output differs from the previous Span+modulo path; the mapping is still uniform and
+        /// deterministic, but a given (x,y,n) will pick a different sprite variant than before.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int HashPosition(int x, int y, int n)
         {
-            Span<byte> bytes = stackalloc byte[8];
-            BinaryPrimitives.WriteInt32LittleEndian(bytes,       pos.x);
-            BinaryPrimitives.WriteInt32LittleEndian(bytes[4..],  pos.y);
+            const uint c1 = 0xcc9e2d51;
+            const uint c2 = 0x1b873593;
 
-            var ro = (ReadOnlySpan<byte>)bytes;
-            uint h = MurmurHash3.Hash32(ref ro, seed: 0);
+            uint h = 0; // seed
 
-            return (int)(h % (uint)n);
+            uint k = (uint)x * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+            h = (h << 13) | (h >> 19);
+            h = h * 5 + 0xe6546b64;
+
+            k = (uint)y * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+            h = (h << 13) | (h >> 19);
+            h = h * 5 + 0xe6546b64;
+
+            // Length finalizer (8 bytes consumed, no tail).
+            h ^= 8;
+            h ^= h >> 16;
+            h *= 0x85ebca6b;
+            h ^= h >> 13;
+            h *= 0xc2b2ae35;
+            h ^= h >> 16;
+
+            // Lemire's multiplicative reduction: avoids `% n`.
+            return (int)(((ulong)h * (ulong)(uint)n) >> 32);
         }
         
         public static float HashPositionFloat(Vector2Int pos)
@@ -38,17 +70,50 @@ namespace MagusStudios.WaveFunctionCollapse
             return h * (1f / 4294967296f);
         }
 
+        /// <summary>
+        /// Specialized inline MurmurHash3 over a fixed 9-byte input (chunk.x, chunk.y, block).
+        /// Bit-for-bit identical to the previous Span+MurmurHash3 path — same seeds for the same
+        /// inputs, so previously generated chunks regenerate identically.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static uint HashWorldBlock(uint seed, Vector2Int chunk, byte block)
         {
-            Span<byte> buffer = stackalloc byte[9];
+            const uint c1 = 0xcc9e2d51;
+            const uint c2 = 0x1b873593;
 
-            BinaryPrimitives.WriteInt32LittleEndian(buffer[0..4], chunk.x);
-            BinaryPrimitives.WriteInt32LittleEndian(buffer[4..8], chunk.y);
-            buffer[8] = block;
+            uint h = seed;
 
-            ReadOnlySpan<byte> bytes = buffer;
+            // Word 0: chunk.x
+            uint k = (uint)chunk.x * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+            h = (h << 13) | (h >> 19);
+            h = h * 5 + 0xe6546b64;
 
-            return MurmurHash3.Hash32(ref bytes, seed);
+            // Word 1: chunk.y
+            k = (uint)chunk.y * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+            h = (h << 13) | (h >> 19);
+            h = h * 5 + 0xe6546b64;
+
+            // Tail: 1 byte (`block`).
+            k = (uint)block * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+
+            // Length finalizer (9 bytes).
+            h ^= 9;
+            h ^= h >> 16;
+            h *= 0x85ebca6b;
+            h ^= h >> 13;
+            h *= 0xc2b2ae35;
+            h ^= h >> 16;
+
+            return h;
         }
 
         public static void LoadMapData(Tilemap tilemap, int[,] map, TileDatabase tileDatabase)

@@ -1,9 +1,11 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using AYellowpaper.SerializedCollections;
 using MagusStudios.WaveFunctionCollapse.Utils;
@@ -22,9 +24,7 @@ namespace MagusStudios.WaveFunctionCollapse
         public Tilemap TargetTilemap; // The target tilemap to generate the world upon
         public uint Seed;
 
-        [SerializeField]
-        private int generateDistance = 1; //increasing this causes a memory leak idk why just don't touch it lol
-
+        [SerializeField] int generateDistance = 1;
         [SerializeField] int drawDistance = 1;
         [SerializeField] bool clearOnStart = true;
         [SerializeField] Biome biome;
@@ -36,12 +36,27 @@ namespace MagusStudios.WaveFunctionCollapse
 
         // size of loaded/saved chunks, must be even
         // suggestions: 16,32,48,64
-        public const int CHUNK_SIZE = 48;
+        public const int CHUNK_SIZE = 24;
 
         // size of generated blocks, which are later converted to chunks. Must satisfy the following:
         // BLOCKSIZE is even and BLOCK_SIZE < CHUNK_SIZE and BLOCK_SIZE > CHUNK_SIZE / 2
         // suggestions: 12,24,36,48
-        private const int BLOCK_SIZE = 36;
+        private const int BLOCK_SIZE = 18;
+
+        // Tile draw is split into sub-blocks of this size to spread SetTilesBlock cost across frames.
+        // Computed from CHUNK_SIZE so it always divides the chunk evenly. Targets ~16 per side, capped
+        // at CHUNK_SIZE/2 so we always get at least 4 sub-blocks per chunk.
+        private static readonly int SUB_BLOCK_SIZE = ComputeSubBlockSize(CHUNK_SIZE);
+
+        private static int ComputeSubBlockSize(int chunkSize)
+        {
+            int target = Math.Min(16, Math.Max(1, chunkSize / 2));
+            for (int s = target; s >= 1; s--)
+            {
+                if (chunkSize % s == 0) return s;
+            }
+            return 1;
+        }
 
         // ~ State ~
 
@@ -61,6 +76,11 @@ namespace MagusStudios.WaveFunctionCollapse
         // (0=pregenerated, 1-4=layers 1-4)
         private Dictionary<Vector2Int, byte> _allGeneratedBlocks = new();
 
+        // Set whenever _allGeneratedBlocks is mutated; cleared after a successful save. Lets us skip
+        // re-serializing+writing the (potentially large, growing) layer-progression file when nothing
+        // has actually changed since the last save cycle.
+        private bool _allGeneratedBlocksDirty = false;
+
         // the last chunk the player was in, used to determine when to update chunks
         private Vector2Int _lastPlayerChunk = new(int.MaxValue, int.MaxValue);
 
@@ -76,10 +96,60 @@ namespace MagusStudios.WaveFunctionCollapse
         private HashSet<Vector2Int> _chunksToUnload = new();
         private HashSet<Vector2Int>[] _blocksToGenerate = new HashSet<Vector2Int>[4];
         private readonly List<Task> _saveTasks = new();
-        private readonly TileBase[] _tileDrawBuffer = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
-        private readonly TileBase[] _nullTileBuffer = new TileBase[CHUNK_SIZE * CHUNK_SIZE];
+        private readonly TileBase[] _subTileDrawBuffer = new TileBase[SUB_BLOCK_SIZE * SUB_BLOCK_SIZE];
+        private readonly TileBase[] _subNullTileBuffer = new TileBase[SUB_BLOCK_SIZE * SUB_BLOCK_SIZE];
         private readonly Stack<WfcBlockState> _blockStatePool = new();
-        private Func<bool> _allJobsCompleted;
+
+        // Per-template adjacency lookup cache for IsOutputValid.
+        // Outer dict: template -> inner dict. Inner dict: tileKey -> array indexed by (int)Direction
+        // of the HashSet of allowed neighbor tile keys. Built once per template.
+        private readonly Dictionary<WfcTemplate, Dictionary<int, HashSet<int>[]>> _adjacencyLookupCache = new();
+
+        // Per-template WfcBiomeData cache. WfcBiomeData is identical for a given template (it just
+        // converts the template's modules into the native lookup structures the WFC job uses), so
+        // we build it once and reuse — the previous code allocated a fresh one (plus two managed
+        // dictionaries inside) per affected chunk per generation cycle. Disposed in OnDestroy.
+        private readonly Dictionary<WfcTemplate, WfcBiomeData> _biomeDataCache = new();
+
+        // Per-cycle scratch for GenerateBlocks; lifted to a field so the dictionary itself isn't
+        // re-allocated each cycle. Cleared between layers.
+        private readonly Dictionary<Vector2Int, WfcBlockState> _stateDict = new();
+
+        // Reusable border buffers for GetBordersOfBlock — previously 4 fresh List<int> per call.
+        private readonly List<int> _bordersUp = new(BLOCK_SIZE);
+        private readonly List<int> _bordersDown = new(BLOCK_SIZE);
+        private readonly List<int> _bordersLeft = new(BLOCK_SIZE);
+        private readonly List<int> _bordersRight = new(BLOCK_SIZE);
+
+        // Reusable list of in-flight chunk-load tasks for UpdateChunks — replaces a LINQ Select
+        // that was allocating a closure per chunk plus an iterator object.
+        private readonly List<Task> _loadTasks = new();
+
+        // Pre-computed border lookup tables. For each (layer, t) where t is the position along
+        // a block edge, stores the chunk-offset (relative to the current chunk) and flat tile
+        // index that the border tile maps to. Replaces 4 * BLOCK_SIZE calls to
+        // GetChunkAndLocalTilePositionFromTile per call to GetBordersOfBlock.
+        private struct BorderOffset
+        {
+            public Vector2Int chunkOffset;
+            public int localIndex;
+        }
+
+        private BorderOffset[,] _borderOffsetsTop;     // [layer, t]
+        private BorderOffset[,] _borderOffsetsBottom;
+        private BorderOffset[,] _borderOffsetsLeft;
+        private BorderOffset[,] _borderOffsetsRight;
+
+        // Reusable scratch for parallelized validation-and-apply phase in GenerateBlocks.
+        private struct ValidationEntry
+        {
+            public Vector2Int ChunkPos;
+            public WfcBlockState BlockState;
+            public WfcBiomeData BiomeData;
+            public Task<bool> Task;
+        }
+
+        private readonly List<ValidationEntry> _validationEntries = new();
 
         // ~ Events ~
 
@@ -117,7 +187,8 @@ namespace MagusStudios.WaveFunctionCollapse
             if (!Directory.Exists(_chunkDirectory))
             {
                 Directory.CreateDirectory(_chunkDirectory);
-                return;
+                // (previously returned here, which skipped BlockOffsets init and everything below;
+                // continuing now so the rest of Awake runs on a fresh install too)
             }
 
             // initialize offsets for blocks (just some reference data that we won't have to recompute)
@@ -126,6 +197,14 @@ namespace MagusStudios.WaveFunctionCollapse
             BlockOffsets[1] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, -CHUNK_SIZE / 2 + blockGap / 2);
             BlockOffsets[2] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, blockGap / 2);
             BlockOffsets[3] = new Vector2Int(blockGap / 2, blockGap / 2);
+
+            // Pre-size _jobHandles to the maximum number of blocks we will schedule per layer
+            // (one job per chunk in generateDistance). Avoids List growth reallocations.
+            int chunksInGenerateDistance = (2 * generateDistance + 1) * (2 * generateDistance + 1);
+            _jobHandles.Capacity = chunksInGenerateDistance;
+            _validationEntries.Capacity = chunksInGenerateDistance;
+
+            PrecomputeBorderOffsets();
 
             if (clearOnStart)
             {
@@ -141,8 +220,6 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // load all generated chunk coords
             _ = InitializeAsync();
-
-            _allJobsCompleted = AllJobsCompleted;
         }
 
         private bool AllJobsCompleted()
@@ -202,13 +279,15 @@ namespace MagusStudios.WaveFunctionCollapse
             _chunksUnloaded.Clear();
 
             // load or pre-generate
-            Task loadTask = Task.WhenAll(
-                _unloadedChunksInLoadDistance.Select(coord => LoadOrPregenerateChunkAsync(coord, _chunksPregenerated))
-            );
+            _loadTasks.Clear();
+            foreach (Vector2Int coord in _unloadedChunksInLoadDistance)
+            {
+                _loadTasks.Add(LoadOrPregenerateChunkAsync(coord, _chunksPregenerated));
+            }
+            Task loadTask = Task.WhenAll(_loadTasks);
 
             while (!loadTask.IsCompleted)
                 yield return null;
-
             if (loadTask.IsFaulted)
                 throw loadTask.Exception;
 
@@ -231,16 +310,27 @@ namespace MagusStudios.WaveFunctionCollapse
 
             CascadeBlockDependencies(ref _blocksToGenerate);
 
-            yield return StartCoroutine(GenerateBlocks(_blocksToGenerate));
-
-            // update all generated blocks dictionary
-            for (byte i = 0; i < 4; i++)
+            if (_blocksToGenerate.Length != 0)
             {
-                foreach (Vector2Int block in _blocksToGenerate[i])
+                Task generateBlocksTask = GenerateBlocks(_blocksToGenerate);
+                while (!generateBlocksTask.IsCompleted)
+                    yield return null;
+                if (loadTask.IsFaulted)
+                    throw loadTask.Exception;
+
+                // update all generated blocks dictionary
+                for (byte i = 0; i < 4; i++)
                 {
-                    byte oldBlockGeneratedTo = _allGeneratedBlocks[block];
-                    byte newBlockGeneratedTo = (byte)(i + 1);
-                    if (oldBlockGeneratedTo < newBlockGeneratedTo) _allGeneratedBlocks[block] = newBlockGeneratedTo;
+                    foreach (Vector2Int block in _blocksToGenerate[i])
+                    {
+                        byte oldBlockGeneratedTo = _allGeneratedBlocks[block];
+                        byte newBlockGeneratedTo = (byte)(i + 1);
+                        if (oldBlockGeneratedTo < newBlockGeneratedTo)
+                        {
+                            _allGeneratedBlocks[block] = newBlockGeneratedTo;
+                            _allGeneratedBlocksDirty = true;
+                        }
+                    }
                 }
             }
 
@@ -250,7 +340,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // unload chunks
             _chunksToUnload.Clear();
-            GetChunksOutsideDistance(playerChunkPosition, generateDistance + 3, _loadedChunks.Keys,
+            GetChunksOutsideDistance(playerChunkPosition, generateDistance + 2, _loadedChunks.Keys,
                 ref _chunksToUnload);
 
             foreach (Vector2Int chunkPos in _chunksToUnload)
@@ -296,9 +386,18 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // write all chunks that were changed to file and the all generated chunk positions dict
             _saveTasks.Clear();
-            _saveTasks.AddRange(
-                _chunksAffectedByGeneration.Select(chunkPos => SaveChunkAsync(chunkPos, _loadedChunks[chunkPos])));
-            _saveTasks.Add(SaveAllGeneratedBlocksDictAsync(_allGeneratedBlocks, GetAllGeneratedBlocksPath()));
+            foreach (Vector2Int chunkPos in _chunksAffectedByGeneration)
+            {
+                _saveTasks.Add(SaveChunkAsync(chunkPos, _loadedChunks[chunkPos]));
+            }
+            // Only re-save the layer-progression file when something actually changed. This dictionary
+            // grows unboundedly with exploration, so the serialize+write cost grows over the session;
+            // skipping no-op saves keeps the cost off most cycles entirely.
+            if (_allGeneratedBlocksDirty)
+            {
+                _saveTasks.Add(SaveAllGeneratedBlocksDictAsync(_allGeneratedBlocks, GetAllGeneratedBlocksPath()));
+                _allGeneratedBlocksDirty = false;
+            }
 
             Task saveAll = Task.WhenAll(_saveTasks);
             bool allChunksSaved;
@@ -322,14 +421,18 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // - Update Tilemap - 
 
-            // get all chunks within draw distance that are not drawn or should be redrawn because generation affected
-            // them (at the edges)
+            // Walk only chunks within draw distance — that's the visibility filter for generation
+            // effects too. A chunk is queued for (re)draw if it isn't drawn yet, OR it's already drawn
+            // but its tiles changed this cycle (generation writes into neighbor chunks via block
+            // dependencies, so "affected" can include chunks where only a small region actually
+            // changed). The previous `(drawn && affected)` clause was redundant — if !drawn was
+            // false we know drawn is true, so just check `affected`.
             _chunksToDraw.Clear();
             _chunksInDrawDistance.Clear();
             GetChunksInDistance(playerChunkPosition, drawDistance, _chunksInDrawDistance);
             foreach (Vector2Int c in _chunksInDrawDistance)
             {
-                if (!_drawnChunks.Contains(c) || (_drawnChunks.Contains(c) && _chunksAffectedByGeneration.Contains(c)))
+                if (!_drawnChunks.Contains(c) || _chunksAffectedByGeneration.Contains(c))
                     _chunksToDraw.Add(c);
             }
 
@@ -337,20 +440,30 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // un-draw chunks that are drawn and outside draw distance
             _chunksToUndraw.Clear();
-            GetChunksOutsideDistance(playerChunkPosition, generateDistance + 1, _drawnChunks,
+            GetChunksOutsideDistance(playerChunkPosition, drawDistance + 1, _drawnChunks,
                 ref _chunksToUndraw);
             foreach (Vector2Int chunkPos in _chunksToUndraw)
             {
-                Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
-                BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
+                Vector3Int chunkOrigin = (chunkPos * CHUNK_SIZE).ToVector3Int();
+                Vector3Int subSize = new Vector3Int(SUB_BLOCK_SIZE, SUB_BLOCK_SIZE, 1);
 
-                TargetTilemap.SetTilesBlock(bounds, _nullTileBuffer);
+                // Same sub-block split as DrawChunks — clear the chunk in pieces, yielding between
+                // each SetTilesBlock so undraw doesn't spike a frame either.
+                for (int subY = 0; subY < CHUNK_SIZE; subY += SUB_BLOCK_SIZE)
+                {
+                    for (int subX = 0; subX < CHUNK_SIZE; subX += SUB_BLOCK_SIZE)
+                    {
+                        BoundsInt subBounds = new BoundsInt(
+                            chunkOrigin + new Vector3Int(subX, subY, 0), subSize);
+                        TargetTilemap.SetTilesBlock(subBounds, _subNullTileBuffer);
+
+                        yield return null;
+                    }
+                }
 
                 _drawnChunks.Remove(chunkPos);
 
                 OnChunkUndrawn?.Invoke(chunkPos);
-
-                yield return null;
             }
 
             // - Log -
@@ -372,59 +485,55 @@ namespace MagusStudios.WaveFunctionCollapse
             // draw chunks that are within the draw distance and were affected by generation or are not drawn
             foreach (Vector2Int chunkPos in chunks)
             {
-                for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; i++)
+                // Hoist per-chunk lookups out of the inner loop — GetTemplate does a Perlin sample
+                // and would otherwise run once per tile.
+                int[] chunkData = _loadedChunks[chunkPos];
+                TileDatabase tileDatabase = biome.GetTemplate(chunkPos).TileDatabase;
+                Vector3Int chunkOrigin = (chunkPos * CHUNK_SIZE).ToVector3Int();
+                Vector3Int subSize = new Vector3Int(SUB_BLOCK_SIZE, SUB_BLOCK_SIZE, 1);
+
+                // Stream the chunk to the tilemap one sub-block at a time, yielding between each
+                // SetTilesBlock call so a single large chunk doesn't spike a frame.
+                for (int subY = 0; subY < CHUNK_SIZE; subY += SUB_BLOCK_SIZE)
                 {
-                    int tileKey = _loadedChunks[chunkPos][i];
-
-                    if (tileKey < 0)
+                    for (int subX = 0; subX < CHUNK_SIZE; subX += SUB_BLOCK_SIZE)
                     {
-                        _tileDrawBuffer[i] = null;
-                        continue;
-                    }
+                        for (int dy = 0; dy < SUB_BLOCK_SIZE; dy++)
+                        {
+                            int chunkRowStart = (subY + dy) * CHUNK_SIZE + subX;
+                            int subRowStart = dy * SUB_BLOCK_SIZE;
+                            for (int dx = 0; dx < SUB_BLOCK_SIZE; dx++)
+                            {
+                                int tileKey = chunkData[chunkRowStart + dx];
+                                _subTileDrawBuffer[subRowStart + dx] =
+                                    tileKey < 0 ? null : tileDatabase[tileKey];
+                            }
+                        }
 
-                    _tileDrawBuffer[i] = biome.GetTemplate(chunkPos).TileDatabase[tileKey];
+                        BoundsInt subBounds = new BoundsInt(
+                            chunkOrigin + new Vector3Int(subX, subY, 0), subSize);
+                        TargetTilemap.SetTilesBlock(subBounds, _subTileDrawBuffer);
+
+                        yield return null;
+                    }
                 }
 
-                Vector3Int tilePositionOfChunk = (chunkPos * CHUNK_SIZE).ToVector3Int();
-                BoundsInt bounds = new BoundsInt(tilePositionOfChunk, new Vector3Int(CHUNK_SIZE, CHUNK_SIZE, 1));
-
-                TargetTilemap.SetTilesBlock(bounds, _tileDrawBuffer);
-
                 _drawnChunks.Add(chunkPos);
-
-                OnChunkDrawn?.Invoke(chunkPos, _loadedChunks[chunkPos], biome);
-
-                yield return null;
+                OnChunkDrawn?.Invoke(chunkPos, chunkData, biome);
             }
         }
 
 
         // ── Optimized GenerateBlocks ──────────────────────────────────────────────
-        private IEnumerator GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
+        private async Task GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
         {
-            // Pre-size to avoid rehashing; count distinct chunks across all layers.
-            int totalDistinct = 0;
-            foreach (var set in blocksToGenerate) totalDistinct += set.Count;
-
-            Dictionary<Vector2Int, WfcBlockState> stateDict = new(totalDistinct);
-            Dictionary<Vector2Int, WfcBiomeData> biomeGlobalsDict = new(totalDistinct);
-
-            for (int layer = 0; layer < blocksToGenerate.Length; layer++)
-            {
-                foreach (Vector2Int chunk in blocksToGenerate[layer])
-                {
-                    // Single lookup instead of ContainsKey + indexer.
-                    if (!biomeGlobalsDict.ContainsKey(chunk))
-                        biomeGlobalsDict[chunk] = new WfcBiomeData(biome.GetTemplate(chunk));
-                }
-            }
+            _stateDict.Clear();
 
             for (byte layer = 0; layer < 4; layer++)
             {
                 foreach (Vector2Int chunk in blocksToGenerate[layer])
                 {
-                    // Single lookup.
-                    WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunk];
+                    WfcBiomeData wfcBiomeData = GetOrBuildBiomeData(biome.GetTemplate(chunk));
                     WfcTemplate template = wfcBiomeData.Template;
 
                     Random rng = new Random(TileUtils.HashWorldBlock(Seed, chunk, layer));
@@ -434,9 +543,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     WfcBlockState wfcBlockState = RentBlockState(
                         new Vector2Int(BLOCK_SIZE, BLOCK_SIZE),
                         template.TileRules.Modules.Count,
-                        template, rng, borders);
+                        template, borders);
 
-                    stateDict.Add(chunk, wfcBlockState);
+                    _stateDict.Add(chunk, wfcBlockState);
 
                     WfcJob wfc = new WfcJob
                     {
@@ -462,68 +571,97 @@ namespace MagusStudios.WaveFunctionCollapse
                     _jobHandles.Add(wfc.Schedule());
                 }
 
-                // No closure allocation — reuses the cached field delegate.
-                yield return new WaitUntil(_allJobsCompleted);
+                // Kick off all batched jobs immediately rather than waiting for an implicit flush —
+                // this maximizes job-system parallelism while we're still doing main-thread setup.
+                JobHandle.ScheduleBatchedJobs();
+
+                while (!AllJobsCompleted())
+                {
+                    await Task.Yield();
+                }
 
                 foreach (JobHandle jobHandle in _jobHandles)
                     jobHandle.Complete();
 
                 _jobHandles.Clear();
 
-                foreach (KeyValuePair<Vector2Int, WfcBlockState> kvp in stateDict)
+                // Launch all chunk validations up front. IsOutputValid does its heavy lifting on the
+                // thread pool, so launching all of them before awaiting any lets them run in parallel.
+                _validationEntries.Clear();
+                foreach (KeyValuePair<Vector2Int, WfcBlockState> kvp in _stateDict)
                 {
-                    Vector2Int chunkPosition = kvp.Key;
-                    WfcBlockState wfcBlockState = kvp.Value;
-                    WfcBiomeData wfcBiomeData = biomeGlobalsDict[chunkPosition];
+                    WfcBiomeData wfcBiomeData = GetOrBuildBiomeData(biome.GetTemplate(kvp.Key));
+                    _validationEntries.Add(new ValidationEntry
+                    {
+                        ChunkPos = kvp.Key,
+                        BlockState = kvp.Value,
+                        BiomeData = wfcBiomeData,
+                        Task = IsOutputValid(
+                            kvp.Value.Output, kvp.Key, layer,
+                            wfcBiomeData.moduleIndexToKeyArray),
+                    });
+                }
 
-                    bool valid = IsOutputValid(
-                        wfcBlockState.Output, chunkPosition, layer,
-                        wfcBiomeData.moduleIndexToKey);
+                // Now drain results in order. Any task that finished while we were awaiting an earlier
+                // one returns immediately. 
+                foreach (ValidationEntry entry in _validationEntries)
+                {
+                    bool valid = await entry.Task;
 
                     if (!valid)
                         Debug.LogWarning(
-                            $"[{nameof(WfcWorldStreamer)}] Error in chunk {chunkPosition} on layer {layer}");
+                            $"[{nameof(WfcWorldStreamer)}] Error in chunk {entry.ChunkPos} on layer {layer}");
                     else
                         UpdateChunksFromBlock(
-                            chunkPosition, layer, wfcBlockState.Output,
-                            wfcBiomeData.moduleIndexToKey,
-                            wfcBiomeData.Template.DefaultTileKey);
+                            entry.ChunkPos, layer, entry.BlockState.Output,
+                            entry.BiomeData.moduleIndexToKeyArray,
+                            entry.BiomeData.Template.DefaultTileKey);
 
                     // Return to pool instead of disposing.
-                    ReturnBlockState(wfcBlockState);
+                    ReturnBlockState(entry.BlockState);
                 }
 
-                stateDict.Clear();
+                _stateDict.Clear();
             }
+        }
 
-            foreach (var kvp in biomeGlobalsDict)
-                kvp.Value.Dispose();
+        private WfcBiomeData GetOrBuildBiomeData(WfcTemplate template)
+        {
+            if (!_biomeDataCache.TryGetValue(template, out WfcBiomeData data))
+            {
+                data = new WfcBiomeData(template);
+                _biomeDataCache[template] = data;
+            }
+            return data;
         }
 
         // Pool helpers for generation
         private WfcBlockState RentBlockState(
             Vector2Int size, int moduleCount, WfcTemplate template,
-            Random rng, WfcUtils.Borders borders)
+            WfcUtils.Borders borders)
         {
-            // Only reuse if the pooled state is size-compatible.
             if (_blockStatePool.TryPop(out WfcBlockState pooled))
             {
-                pooled.Reset(size, moduleCount, template, rng, borders);
+                pooled.Reset(size, moduleCount, template, borders);
                 return pooled;
             }
 
             // Pooled state was wrong size (or pool was empty) — make a fresh one.
             if (pooled != null) pooled.Dispose(); // discard the incompatible one
-            return new WfcBlockState(size, moduleCount, template, rng, borders);
+            return new WfcBlockState(size, moduleCount, template, borders);
         }
 
         private void ReturnBlockState(WfcBlockState state) => _blockStatePool.Push(state);
 
-        // On teardown, drain the pool
+        // On teardown, drain the pool and dispose cached biome data (which owns native containers).
         private void OnDestroy()
         {
             while (_blockStatePool.TryPop(out WfcBlockState s))
                 s.Dispose();
+
+            foreach (WfcBiomeData data in _biomeDataCache.Values)
+                data.Dispose();
+            _biomeDataCache.Clear();
         }
 
         private void GetUnloadedChunksInLoadDistance(Vector2Int playerChunkPosition,
@@ -586,6 +724,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 _loadedChunks.Add(chunkPos, grass);
                 chunksPregenerated.Add(chunkPos);
                 _allGeneratedBlocks.Add(chunkPos, 0);
+                _allGeneratedBlocksDirty = true;
                 return;
             }
 
@@ -639,15 +778,78 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private bool IsOutputValid(NativeArray<int> output, Vector2Int chunkPos, int layer,
-            Dictionary<int, int> moduleIndexToKey)
+        private Dictionary<int, HashSet<int>[]> GetOrBuildAdjacencyLookup(WfcTemplate template)
         {
-            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules =
-                biome.GetTemplate(chunkPos).TileRules.Modules;
+            if (_adjacencyLookupCache.TryGetValue(template, out var cached))
+                return cached;
 
-            Vector2Int chunkStartTilePosGlobal = chunkPos * CHUNK_SIZE;
-            Vector2Int blockStartTilePosGlobal = chunkStartTilePosGlobal + BlockOffsets[layer];
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = template.TileRules.Modules;
+            var lookup = new Dictionary<int, HashSet<int>[]>(modules.Count);
+            foreach (var kvp in modules)
+            {
+                var perDirection = new HashSet<int>[4];
+                perDirection[(int)Direction.Up] = new HashSet<int>(kvp.Value.Neighbors[Direction.Up]);
+                perDirection[(int)Direction.Down] = new HashSet<int>(kvp.Value.Neighbors[Direction.Down]);
+                perDirection[(int)Direction.Left] = new HashSet<int>(kvp.Value.Neighbors[Direction.Left]);
+                perDirection[(int)Direction.Right] = new HashSet<int>(kvp.Value.Neighbors[Direction.Right]);
+                lookup[kvp.Key] = perDirection;
+            }
 
+            _adjacencyLookupCache[template] = lookup;
+            return lookup;
+        }
+
+        private Task<bool> IsOutputValid(NativeArray<int> output, Vector2Int chunkPos, int layer,
+            int[] moduleIndexToKey)
+        {
+            Dictionary<int, HashSet<int>[]> adjacency =
+                GetOrBuildAdjacencyLookup(biome.GetTemplate(chunkPos));
+
+            Vector2Int blockStartTilePosGlobal = chunkPos * CHUNK_SIZE + BlockOffsets[layer];
+
+            // Snapshot main-thread-only state so the validation loop can run on a thread pool thread:
+            // copy the NativeArray to managed memory and pre-fetch the four block-edge neighbor strips
+            // from _loadedChunks. moduleIndexToKey and the adjacency lookup are not mutated after
+            // construction, so they're safe to read concurrently.
+            int[] outputCopy = new int[output.Length];
+            output.CopyTo(outputCopy);
+
+            int[] leftBorder = new int[BLOCK_SIZE];
+            int[] rightBorder = new int[BLOCK_SIZE];
+            int[] upBorder = new int[BLOCK_SIZE];
+            int[] downBorder = new int[BLOCK_SIZE];
+
+            for (int n = 0; n < BLOCK_SIZE; n++)
+            {
+                (Vector2Int lc, Vector2Int lp) = GetChunkAndLocalTilePositionFromTile(
+                    blockStartTilePosGlobal + Vector2Int.up * n + Vector2Int.left);
+                leftBorder[n] = _loadedChunks[lc][TileUtils.Flatten(lp, CHUNK_SIZE)];
+
+                (Vector2Int rc, Vector2Int rp) = GetChunkAndLocalTilePositionFromTile(
+                    blockStartTilePosGlobal + Vector2Int.up * n + Vector2Int.right * BLOCK_SIZE);
+                rightBorder[n] = _loadedChunks[rc][TileUtils.Flatten(rp, CHUNK_SIZE)];
+
+                (Vector2Int uc, Vector2Int up) = GetChunkAndLocalTilePositionFromTile(
+                    blockStartTilePosGlobal + Vector2Int.up * BLOCK_SIZE + Vector2Int.right * n);
+                upBorder[n] = _loadedChunks[uc][TileUtils.Flatten(up, CHUNK_SIZE)];
+
+                (Vector2Int dc, Vector2Int dp) = GetChunkAndLocalTilePositionFromTile(
+                    blockStartTilePosGlobal + Vector2Int.down + Vector2Int.right * n);
+                downBorder[n] = _loadedChunks[dc][TileUtils.Flatten(dp, CHUNK_SIZE)];
+            }
+
+            return Task.Run(() => ValidateBlockOutput(
+                outputCopy, adjacency, moduleIndexToKey,
+                leftBorder, rightBorder, upBorder, downBorder, chunkPos));
+        }
+
+        private static bool ValidateBlockOutput(
+            int[] output,
+            Dictionary<int, HashSet<int>[]> adjacency,
+            int[] moduleIndexToKey,
+            int[] leftBorder, int[] rightBorder, int[] upBorder, int[] downBorder,
+            Vector2Int chunkPos)
+        {
             for (int i = 0; i < output.Length; i++)
             {
                 int localX = i % BLOCK_SIZE;
@@ -659,16 +861,11 @@ namespace MagusStudios.WaveFunctionCollapse
                     return false;
                 }
 
-                // tile left 
+                // tile left
                 int leftNeighborTileKey;
                 if (localX == 0)
                 {
-                    (Vector2Int chunk, Vector2Int localTilePosition) =
-                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * localY +
-                                                             Vector2Int.left);
-
-                    leftNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
+                    leftNeighborTileKey = leftBorder[localY];
                 }
                 else
                 {
@@ -682,7 +879,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     leftNeighborTileKey = moduleIndexToKey[leftTileNeighborIndex];
                 }
 
-                if (!modules[leftNeighborTileKey].Neighbors[Direction.Right].Contains(output[i]))
+                if (!adjacency[leftNeighborTileKey][(int)Direction.Right].Contains(output[i]))
                 {
                     Debug.Log($"{leftNeighborTileKey} does not contain {output[i]} in its right neighbors");
                     return false;
@@ -692,11 +889,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int rightNeighborTileKey;
                 if (localX == BLOCK_SIZE - 1)
                 {
-                    (Vector2Int chunk, Vector2Int localTilePosition) =
-                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * localY +
-                                                             Vector2Int.right * BLOCK_SIZE);
-                    rightNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
+                    rightNeighborTileKey = rightBorder[localY];
                 }
                 else
                 {
@@ -710,7 +903,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     rightNeighborTileKey = moduleIndexToKey[rightTileNeighborIndex];
                 }
 
-                if (!modules[rightNeighborTileKey].Neighbors[Direction.Left].Contains(output[i]))
+                if (!adjacency[rightNeighborTileKey][(int)Direction.Left].Contains(output[i]))
                 {
                     Debug.Log($"{rightNeighborTileKey} does not contain {output[i]} in its left neighbors");
                     return false;
@@ -720,11 +913,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int upNeighborTileKey;
                 if (localY == BLOCK_SIZE - 1)
                 {
-                    (Vector2Int chunk, Vector2Int localTilePosition) =
-                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.up * BLOCK_SIZE +
-                                                             Vector2Int.right * localX);
-                    upNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
+                    upNeighborTileKey = upBorder[localX];
                 }
                 else
                 {
@@ -738,7 +927,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     upNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
                 }
 
-                if (!modules[upNeighborTileKey].Neighbors[Direction.Down].Contains(output[i]))
+                if (!adjacency[upNeighborTileKey][(int)Direction.Down].Contains(output[i]))
                 {
                     Debug.Log($"{upNeighborTileKey} does not contain {output[i]} in its down neighbors");
                     return false;
@@ -748,11 +937,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 int downNeighborTileKey;
                 if (localY == 0)
                 {
-                    (Vector2Int chunk, Vector2Int localTilePosition) =
-                        GetChunkAndLocalTilePositionFromTile(blockStartTilePosGlobal + Vector2Int.down +
-                                                             Vector2Int.right * localX);
-                    downNeighborTileKey =
-                        _loadedChunks[chunk][TileUtils.Flatten(localTilePosition, CHUNK_SIZE)];
+                    downNeighborTileKey = downBorder[localX];
                 }
                 else
                 {
@@ -766,7 +951,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     downNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
                 }
 
-                if (!modules[downNeighborTileKey].Neighbors[Direction.Up].Contains(output[i]))
+                if (!adjacency[downNeighborTileKey][(int)Direction.Up].Contains(output[i]))
                 {
                     Debug.Log($"{downNeighborTileKey} does not contain {output[i]} in its up neighbors");
                     return false;
@@ -791,73 +976,74 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <param name="blockLayer"></param>
         /// <param name="moduleKeyToIndex"></param>
         /// <returns></returns>
+        // Build the lookup tables once per session — the chunk-offset/local-index pattern of each
+        // border tile depends only on (layer, t) and is identical for every chunk.
+        private void PrecomputeBorderOffsets()
+        {
+            _borderOffsetsTop = new BorderOffset[4, BLOCK_SIZE];
+            _borderOffsetsBottom = new BorderOffset[4, BLOCK_SIZE];
+            _borderOffsetsLeft = new BorderOffset[4, BLOCK_SIZE];
+            _borderOffsetsRight = new BorderOffset[4, BLOCK_SIZE];
+
+            for (int layer = 0; layer < 4; layer++)
+            {
+                Vector2Int blockStartPos = BlockOffsets[layer];
+                for (int t = 0; t < BLOCK_SIZE; t++)
+                {
+                    _borderOffsetsTop[layer, t] = MakeOffset(blockStartPos + new Vector2Int(t, BLOCK_SIZE));
+                    _borderOffsetsBottom[layer, t] = MakeOffset(blockStartPos + new Vector2Int(t, -1));
+                    _borderOffsetsLeft[layer, t] = MakeOffset(blockStartPos + new Vector2Int(-1, t));
+                    _borderOffsetsRight[layer, t] = MakeOffset(blockStartPos + new Vector2Int(BLOCK_SIZE, t));
+                }
+            }
+        }
+
+        private BorderOffset MakeOffset(Vector2Int relativePos)
+        {
+            (Vector2Int chunkOffset, Vector2Int localTile) = GetChunkAndLocalTilePositionFromTile(relativePos);
+            return new BorderOffset
+            {
+                chunkOffset = chunkOffset,
+                localIndex = localTile.y * CHUNK_SIZE + localTile.x,
+            };
+        }
+
         private WfcUtils.Borders GetBordersOfBlock(Vector2Int chunk, int blockLayer,
             Dictionary<int, int> moduleKeyToIndex)
         {
-            WfcUtils.Borders borders = new WfcUtils.Borders()
+            // Reuse instance-level lists; WfcBlockState.Reset copies their contents into NativeArrays
+            // synchronously, so the lists are safe to reuse across calls.
+            _bordersUp.Clear();
+            _bordersDown.Clear();
+            _bordersLeft.Clear();
+            _bordersRight.Clear();
+
+            for (int t = 0; t < BLOCK_SIZE; t++)
             {
-                BorderDown = new List<int>(),
-                BorderUp = new List<int>(),
-                BorderLeft = new List<int>(),
-                BorderRight = new List<int>(),
+                BorderOffset top = _borderOffsetsTop[blockLayer, t];
+                _bordersUp.Add(moduleKeyToIndex[_loadedChunks[chunk + top.chunkOffset][top.localIndex]]);
+
+                BorderOffset bottom = _borderOffsetsBottom[blockLayer, t];
+                _bordersDown.Add(moduleKeyToIndex[_loadedChunks[chunk + bottom.chunkOffset][bottom.localIndex]]);
+
+                BorderOffset left = _borderOffsetsLeft[blockLayer, t];
+                _bordersLeft.Add(moduleKeyToIndex[_loadedChunks[chunk + left.chunkOffset][left.localIndex]]);
+
+                BorderOffset right = _borderOffsetsRight[blockLayer, t];
+                _bordersRight.Add(moduleKeyToIndex[_loadedChunks[chunk + right.chunkOffset][right.localIndex]]);
+            }
+
+            return new WfcUtils.Borders
+            {
+                BorderDown = _bordersDown,
+                BorderUp = _bordersUp,
+                BorderLeft = _bordersLeft,
+                BorderRight = _bordersRight,
             };
-
-            Vector2Int blockStartPos = BlockOffsets[blockLayer];
-
-            // top border
-            for (int t = 0; t < BLOCK_SIZE; t++)
-            {
-                Vector2Int borderStartPos = blockStartPos + new Vector2Int(t, BLOCK_SIZE);
-                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
-                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
-                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
-                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
-
-                borders.BorderUp.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
-            }
-
-            // bottom border
-            for (int t = 0; t < BLOCK_SIZE; t++)
-            {
-                Vector2Int borderStartPos = blockStartPos + new Vector2Int(t, -1);
-                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
-                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
-                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
-                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
-
-                borders.BorderDown.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
-            }
-
-            // left border
-            for (int t = 0; t < BLOCK_SIZE; t++)
-            {
-                Vector2Int borderStartPos = blockStartPos + new Vector2Int(-1, t);
-                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
-                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
-                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
-                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
-
-                borders.BorderLeft.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
-            }
-
-            // right border
-            for (int t = 0; t < BLOCK_SIZE; t++)
-            {
-                Vector2Int borderStartPos = blockStartPos + new Vector2Int(BLOCK_SIZE, t);
-                var chunkAndLocalTile = GetChunkAndLocalTilePositionFromTile(borderStartPos);
-                Vector2Int chunkOffset = chunkAndLocalTile.chunk;
-                Vector2Int localTilePosition = chunkAndLocalTile.localTile;
-                int localTileIndex = localTilePosition.y * CHUNK_SIZE + localTilePosition.x;
-
-                borders.BorderRight.Add(moduleKeyToIndex[_loadedChunks[chunk + chunkOffset][localTileIndex]]);
-            }
-
-
-            return borders;
         }
 
         private void UpdateChunksFromBlock(Vector2Int chunkPos, int layer, NativeArray<int> wfcOutput,
-            Dictionary<int, int> wfcGlobalsModuleIndexToKey, int defaultTileKey)
+            int[] moduleIndexToKey, int defaultTileKey)
         {
             int offsetX = BlockOffsets[layer].x;
             int offsetY = BlockOffsets[layer].y;
@@ -898,7 +1084,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     int output = wfcOutput[x + y * BLOCK_SIZE];
 
                     _loadedChunks[targetChunk][localPosition] =
-                        output >= 0 ? wfcGlobalsModuleIndexToKey[output] : defaultTileKey;
+                        output >= 0 ? moduleIndexToKey[output] : defaultTileKey;
                 }
             }
         }
@@ -914,25 +1100,32 @@ namespace MagusStudios.WaveFunctionCollapse
             return (new Vector2Int(chunkX, chunkY), new Vector2Int(localX, localY));
         }
 
-        private async Task SaveChunkAsync(Vector2Int chunkCoord, int[] tiles)
+        private Task SaveChunkAsync(Vector2Int chunkCoord, int[] tiles)
         {
-            string path = Path.Combine(_chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
-            await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
-                bufferSize: 4096, useAsync: true);
-
-            byte[] buffer = new byte[CHUNK_SIZE * CHUNK_SIZE * sizeof(int)];
-            Buffer.BlockCopy(tiles, 0, buffer, 0, buffer.Length);
-            await fs.WriteAsync(buffer);
+            // chunkCoord is a struct (captured by value); _chunkDirectory is an immutable string.
+            // Everything — path construction, FileStream syscall, the write — runs on the thread pool.
+            // Using a non-async delegate avoids the async-state-machine box, and writing the int[]
+            // directly via MemoryMarshal removes the byte[] copy and the ArrayPool round-trip.
+            string chunkDirectory = _chunkDirectory;
+            return Task.Run(() =>
+            {
+                string path = Path.Combine(chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
+                using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write,
+                    FileShare.None, bufferSize: 4096, useAsync: false);
+                fs.Write(MemoryMarshal.AsBytes(tiles.AsSpan()));
+            });
         }
 
         private async Task<int[]> LoadChunkAsync(Vector2Int chunkCoord)
         {
             string path = Path.Combine(_chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
+            // ConfigureAwait(false): continuations resume on the thread pool instead of being posted
+            // back to Unity's main thread (where they'd contend for frame time).
             await using FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
                 bufferSize: 4096, useAsync: true);
 
             byte[] buffer = new byte[CHUNK_SIZE * CHUNK_SIZE * sizeof(int)];
-            await fs.ReadAsync(buffer);
+            await fs.ReadAsync(buffer).ConfigureAwait(false);
 
             int[] tiles = new int[CHUNK_SIZE * CHUNK_SIZE];
             Buffer.BlockCopy(buffer, 0, tiles, 0, buffer.Length);
@@ -959,10 +1152,14 @@ namespace MagusStudios.WaveFunctionCollapse
             return Path.Combine(_chunkDirectory, fileName);
         }
 
-        public static async Task SaveAllGeneratedBlocksDictAsync(Dictionary<Vector2Int, byte> chunkLayers, string path)
+        public static Task SaveAllGeneratedBlocksDictAsync(Dictionary<Vector2Int, byte> chunkLayers, string path)
         {
+            // Serialize on the main thread because the dictionary may be mutated as soon as we yield —
+            // we need a snapshot before going async. Use a pooled byte buffer so the allocation itself
+            // doesn't grow GC pressure as the world expands.
             int count = chunkLayers.Count;
-            byte[] buffer = new byte[sizeof(int) + count * (sizeof(int) * 2 + sizeof(byte))];
+            int byteCount = sizeof(int) + count * (sizeof(int) * 2 + sizeof(byte));
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(byteCount);
 
             int offset = 0;
             BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset), count);
@@ -977,9 +1174,21 @@ namespace MagusStudios.WaveFunctionCollapse
                 buffer[offset++] = pair.Value;
             }
 
-            await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
-                bufferSize: 4096, useAsync: true);
-            await fs.WriteAsync(buffer);
+            // FileStream construction is a synchronous OS syscall; push it (and the write) to a thread
+            // pool thread so the main thread never blocks on filesystem I/O.
+            return Task.Run(() =>
+            {
+                try
+                {
+                    using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write,
+                        FileShare.None, bufferSize: 4096, useAsync: false);
+                    fs.Write(buffer, 0, byteCount);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            });
         }
 
         public static async Task<Dictionary<Vector2Int, byte>> LoadChunkLayersAsync(string path)
@@ -989,7 +1198,7 @@ namespace MagusStudios.WaveFunctionCollapse
             if (!File.Exists(path))
                 return chunkLayers;
 
-            byte[] buffer = await File.ReadAllBytesAsync(path);
+            byte[] buffer = await File.ReadAllBytesAsync(path).ConfigureAwait(false);
 
             using MemoryStream ms = new MemoryStream(buffer);
             using BinaryReader reader = new BinaryReader(ms);

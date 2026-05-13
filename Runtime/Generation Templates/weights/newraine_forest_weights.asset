@@ -112,17 +112,17 @@ MonoBehaviour:
     - Key: 47
       Value: 1
     - Key: 48
-      Value: 1
+      Value: 5
     - Key: 49
-      Value: 6
-    - Key: 50
       Value: 1
+    - Key: 50
+      Value: 0.25
     - Key: 51
-      Value: 0.65
-    - Key: 52
       Value: 0
+    - Key: 52
+      Value: 1
     - Key: 53
-      Value: 1.7
+      Value: 0
     - Key: 54
       Value: 0
     - Key: 55

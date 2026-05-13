@@ -1,25 +1,33 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Pool;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-    [System.Obsolete(
-        "This component is no longer needed as of 4/28/26 since switching to using GameObjects directly " +
-        "on the tilemap for spawns instead of a separate pooling system. This script could be revived if the " +
-        "built-in tilemap functionality proves inadequate. ")]
     [RequireComponent(typeof(WfcWorldStreamer))]
     public class WfcWorldSpawner : MonoBehaviour
     {
+        [SerializeField] private int _spawnsPerFrame = 64;
+
         private WfcWorldStreamer _worldStreamer;
 
         private Dictionary<GameObject, ObjectPool<WorldSpawn>> _spawnPools =
             new Dictionary<GameObject, ObjectPool<WorldSpawn>>();
 
-        // Tracks all spawned objects per chunk so we can release them on undrawn
         private Dictionary<Vector2Int, List<(WorldSpawn spawn, GameObject prefab)>> _chunkSpawns =
             new Dictionary<Vector2Int, List<(WorldSpawn, GameObject)>>();
+
+        private readonly Dictionary<Vector2Int, int> _chunkGeneration = new Dictionary<Vector2Int, int>();
+
+        private readonly Queue<SpawnRequest> _spawnQueue = new Queue<SpawnRequest>();
+
+        private struct SpawnRequest
+        {
+            public Vector2Int ChunkPos;
+            public int Generation;
+            public GameObject Prefab;
+            public Vector2 Position;
+        }
 
         private void Awake()
         {
@@ -38,10 +46,34 @@ namespace MagusStudios.WaveFunctionCollapse
             _worldStreamer.OnChunkUndrawn -= HandleChunkUndrawn;
         }
 
+        private void Update()
+        {
+            int remaining = _spawnsPerFrame;
+
+            while (remaining > 0 && _spawnQueue.Count > 0)
+            {
+                var request = _spawnQueue.Dequeue();
+
+                if (!_chunkGeneration.TryGetValue(request.ChunkPos, out int currentGen)
+                    || currentGen != request.Generation)
+                    continue;
+
+                ObjectPool<WorldSpawn> pool = GetOrCreatePool(request.Prefab);
+                WorldSpawn spawn = pool.Get();
+                spawn.transform.position = request.Position;
+                _chunkSpawns[request.ChunkPos].Add((spawn, request.Prefab));
+                remaining--;
+            }
+        }
+
         private void HandleChunkDrawn(Vector2Int chunkPos, IReadOnlyList<int> chunkData, Biome biome)
         {
             int chunkSize = WfcWorldStreamer.CHUNK_SIZE;
-            List<(WorldSpawn, GameObject)> spawns = new List<(WorldSpawn, GameObject)>();
+            _chunkSpawns[chunkPos] = new List<(WorldSpawn, GameObject)>();
+
+            _chunkGeneration.TryGetValue(chunkPos, out int gen);
+            gen++;
+            _chunkGeneration[chunkPos] = gen;
 
             for (int i = 0; i < chunkData.Count; i++)
             {
@@ -56,13 +88,14 @@ namespace MagusStudios.WaveFunctionCollapse
                 Vector2 cellCenterPos = TileUtils.GetTileCenterPosition(cellWorldPos);
 
                 GameObject prefab = gameObjectTile.GetGameObject(cellWorldPos);
-                ObjectPool<WorldSpawn> pool = GetOrCreatePool(prefab);
-                WorldSpawn spawn = pool.Get();
-                spawn.transform.position = cellCenterPos;
-                spawns.Add((spawn, prefab));
+                _spawnQueue.Enqueue(new SpawnRequest
+                {
+                    ChunkPos = chunkPos,
+                    Generation = gen,
+                    Prefab = prefab,
+                    Position = cellCenterPos
+                });
             }
-
-            _chunkSpawns[chunkPos] = spawns;
         }
 
         private void HandleChunkUndrawn(Vector2Int chunkPos)
@@ -74,6 +107,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 _spawnPools[prefab].Release(spawn);
 
             _chunkSpawns.Remove(chunkPos);
+            _chunkGeneration.Remove(chunkPos);
         }
 
         private ObjectPool<WorldSpawn> GetOrCreatePool(GameObject prefab)

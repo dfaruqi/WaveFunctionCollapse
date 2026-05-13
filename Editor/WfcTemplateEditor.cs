@@ -159,7 +159,7 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             if (_template.TileDatabase == null) return;
 
-            if (_template.TileDatabase.TryGetTile(tileKey, out Tile tile))
+            if (_template.TileDatabase.TryGetTile(tileKey, out Tile tile) && tile != null)
             {
                 if (tile.sprite != null)
                 {
@@ -228,7 +228,7 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             if (_template.TileDatabase == null) return;
 
-            if (_template.TileDatabase.TryGetTile(tileKey, out Tile tile))
+            if (_template.TileDatabase.TryGetTile(tileKey, out Tile tile) && tile != null)
             {
                 if (tile.sprite != null)
                 {

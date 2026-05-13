@@ -245,24 +245,21 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void DrawSpritePreview(Rect position, Sprite sprite)
         {
-            if (sprite == null || sprite.texture == null)
+            if (sprite == null)
                 return;
 
-            Texture2D texture = sprite.texture;
-            Rect spriteRect = sprite.rect;
+            Texture2D preview = AssetPreview.GetAssetPreview(sprite);
+            if (preview != null)
+            {
+                GUI.DrawTexture(position, preview, ScaleMode.ScaleToFit, true);
+            }
+            else
+            {
+                Texture2D miniThumb = AssetPreview.GetMiniThumbnail(sprite);
+                if (miniThumb != null)
+                    GUI.DrawTexture(position, miniThumb, ScaleMode.ScaleToFit, true);
+            }
 
-            // Calculate UV coordinates for the sprite
-            Rect uv = new Rect(
-                spriteRect.x / texture.width,
-                spriteRect.y / texture.height,
-                spriteRect.width / texture.width,
-                spriteRect.height / texture.height
-            );
-
-            // Draw the sprite preview
-            GUI.DrawTextureWithTexCoords(position, texture, uv, true);
-
-            // Draw border
             GUI.Box(position, GUIContent.none, previewStyle);
         }
 
@@ -375,7 +372,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     "Yes", "No"))
                 {
 
-                    ScanTilemapAndOverwrite(GetActiveTilemap());
+                    _tileDatabase.ScanTilemapAndOverwrite(GetActiveTilemap());
                     EditorUtility.SetDirty(_tileDatabase);
                 }
             }
@@ -511,48 +508,6 @@ namespace MagusStudios.WaveFunctionCollapse
                 removedCount > 0 ? $"Removed {removedCount} null entries." : "No null entries found.",
                 "OK");
         }
-
-        public void ScanTilemapAndOverwrite(Tilemap tilemap)
-        {
-            _tileDatabase.Tiles.Clear();
-
-            int count = 0;
-            foreach (Vector3Int pos in tilemap.cellBounds.allPositionsWithin)
-            {
-                TileBase tilebase = tilemap.GetTile(pos);
-                if (_tileDatabase.TryGetKeyFromMapTile(tilebase, out int id)) continue;
-                if (tilebase == null) continue;
-
-                _tileDatabase.Tiles.Add(count, tilebase as Tile);
-                count++;
-            }
-        }
-
-        public void ScanTilemapAndAdd(Tilemap tilemap)
-        {
-            if (tilemap == null) return;
-            if (_tileDatabase == null || _tileDatabase.Tiles == null) return;
-
-            foreach (Vector3Int pos in tilemap.cellBounds.allPositionsWithin)
-            {
-                TileBase tilebase = tilemap.GetTile(pos);
-                if (tilebase == null) continue;
-
-                // Skip if tile already exists in the database
-                if (_tileDatabase.TryGetKeyFromMapTile(tilebase, out int existingId))
-                    continue;
-
-                // Find the lowest unused integer key
-                int newKey = 0;
-                while (_tileDatabase.Tiles.ContainsKey(newKey))
-                    newKey++;
-
-                // Add tile at that key
-                _tileDatabase.Tiles.Add(newKey, tilebase as Tile);
-            }
-        }
-
-
 
         /// <summary>
         /// Returns null if no tilemap found.

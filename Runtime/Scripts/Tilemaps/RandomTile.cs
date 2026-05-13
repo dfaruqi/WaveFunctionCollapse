@@ -19,11 +19,16 @@ namespace MagusStudios.WaveFunctionCollapse
             tileData.colliderType = colliderType;
 
             // If we have possible sprites, pick one deterministically based on the map position
-            if (possibilities != null && possibilities.Count > 0)
+            int count = possibilities == null ? 0 : possibilities.Count;
+            if (count == 0) return;
+            if (count == 1)
             {
-                int index = TileUtils.HashPosition(position.ToVector2Int(), possibilities.Count);
-                tileData.sprite = possibilities[index];
+                tileData.sprite = possibilities[0];
+                return;
             }
+
+            int index = TileUtils.HashPosition(position.x, position.y, count);
+            tileData.sprite = possibilities[index];
         }
     }
 }

@@ -6,7 +6,8 @@
         "Unity.TextMeshPro",
         "Unity.Mathematics",
         "Unity.Collections",
-        "Unity.Burst"
+        "Unity.Burst",
+        "Unity.2D.Tilemap.Extras"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

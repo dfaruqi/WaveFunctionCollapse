@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using AYellowpaper.SerializedCollections;
 using MagusStudios.WaveFunctionCollapse.Utils;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 
 namespace MagusStudios.WaveFunctionCollapse
@@ -19,7 +20,7 @@ namespace MagusStudios.WaveFunctionCollapse
         public NativeArray<int> RightBorder;
         public NativeParallelHashMap<int, float> Weights;
 
-        public WfcBlockState(Vector2Int size, int moduleCount, WfcTemplate template, Unity.Mathematics.Random rng, WfcUtils.Borders borders = default)
+        public WfcBlockState(Vector2Int size, int moduleCount, WfcTemplate template, WfcUtils.Borders borders = default)
         {
             SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
@@ -34,7 +35,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 moduleIndex++;
             }
 
-            // entropy 
+            // entropy
             EntropyHeap =
                 new NativeHeap<WfcJob.CellEntropy, WfcJob.EntropyComparer>(Allocator.Persistent, cellCount);
 
@@ -45,11 +46,9 @@ namespace MagusStudios.WaveFunctionCollapse
 
             Cells = new NativeArray<WfcJob.Cell>(cellCount, Allocator.Persistent);
 
-            // fill domains with all tiles to start
-            for (int i = 0; i < cellCount; i++)
-            {
-                Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
-            }
+            // Bulk-fill domains with the initial all-tiles value via a single memory replicate,
+            // rather than a managed for-loop that crosses the safety boundary on every iteration.
+            FillCells(moduleCount, cellCount);
 
             // === Initialize Stack for Propagation Step
             PropagationStack = new NativeArray<int>(cellCount, Allocator.Persistent);
@@ -110,7 +109,7 @@ namespace MagusStudios.WaveFunctionCollapse
         }
 
         // Reinitializes mutable state in-place. Called on pool rent.
-        public void Reset(Vector2Int size, int moduleCount, WfcTemplate template, Unity.Mathematics.Random rng, WfcUtils.Borders borders = default)
+        public void Reset(Vector2Int size, int moduleCount, WfcTemplate template, WfcUtils.Borders borders = default)
         {
             SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
@@ -129,8 +128,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // ── Cells ─────────────────────────────────────────────────────────────
             int cellCount = size.x * size.y;
-            for (int i = 0; i < cellCount; i++)
-                Cells[i] = WfcJob.Cell.CreateWithAllTiles(moduleCount);
+            FillCells(moduleCount, cellCount);
 
             // ── Borders ───────────────────────────────────────────────────────────
             // Arrays are fixed-size from construction; fill up to their allocated length.
@@ -155,6 +153,19 @@ namespace MagusStudios.WaveFunctionCollapse
             // Output           — fully overwritten by the job, no fill needed.
         }
         
+        // Fills the Cells NativeArray with the "all tiles in domain" initial value via a single
+        // bulk memory replicate. Way faster than a managed for-loop that pays NativeArray safety
+        // overhead on every per-element write.
+        private unsafe void FillCells(int moduleCount, int cellCount)
+        {
+            WfcJob.Cell template = WfcJob.Cell.CreateWithAllTiles(moduleCount);
+            UnsafeUtility.MemCpyReplicate(
+                NativeArrayUnsafeUtility.GetUnsafePtr(Cells),
+                UnsafeUtility.AddressOf(ref template),
+                UnsafeUtility.SizeOf<WfcJob.Cell>(),
+                cellCount);
+        }
+
         public void Dispose()
         {
             EntropyHeap.Dispose();

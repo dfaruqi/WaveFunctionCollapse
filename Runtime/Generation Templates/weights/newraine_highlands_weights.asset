@@ -70,9 +70,9 @@ MonoBehaviour:
     - Key: 26
       Value: 1
     - Key: 27
-      Value: 1
+      Value: 0.8
     - Key: 28
-      Value: 1
+      Value: 0.8
     - Key: 29
       Value: 1
     - Key: 30
@@ -94,21 +94,21 @@ MonoBehaviour:
     - Key: 38
       Value: 1
     - Key: 39
-      Value: 0.1
+      Value: 0.02
     - Key: 40
-      Value: 0.1
+      Value: 0.02
     - Key: 41
-      Value: 0.1
+      Value: 0.02
     - Key: 42
-      Value: 0.1
+      Value: 0.02
     - Key: 43
-      Value: 1
+      Value: 0.35
     - Key: 44
-      Value: 1
+      Value: 0.35
     - Key: 45
-      Value: 0.2
+      Value: 0.35
     - Key: 46
-      Value: 0.2
+      Value: 0.35
     - Key: 47
       Value: 0
     - Key: 48

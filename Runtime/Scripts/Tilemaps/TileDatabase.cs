@@ -49,5 +49,21 @@ namespace MagusStudios.WaveFunctionCollapse
                 return false;
             }
         }
+        
+        public void ScanTilemapAndOverwrite(Tilemap tilemap)
+        {
+            Tiles.Clear();
+
+            int count = 0;
+            foreach (Vector3Int pos in tilemap.cellBounds.allPositionsWithin)
+            {
+                TileBase tilebase = tilemap.GetTile(pos);
+                if (TryGetKeyFromMapTile(tilebase, out int id)) continue;
+                if (tilebase == null) continue;
+
+                Tiles.Add(count, tilebase as Tile);
+                count++;
+            }
+        }
     }
 }

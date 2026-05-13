@@ -17,6 +17,16 @@ namespace MagusStudios.WaveFunctionCollapse
         public WfcTemplate Template;
         public Dictionary<int, int> moduleKeyToIndex;
         public Dictionary<int, int> moduleIndexToKey;
+
+        // Dense int[] mirror of moduleIndexToKey. Module indices are 0..N-1, so an array lookup is
+        // a few cycles vs. a hash dictionary lookup (~10x faster). Used in hot paths:
+        // UpdateChunksFromBlock and IsOutputValid.
+        public int[] moduleIndexToKeyArray;
+
+        // Initial cell value (all tiles in domain). Cached so WfcBlockState.Reset can MemCpyReplicate
+        // it across the Cells NativeArray instead of looping per-cell.
+        public WfcJob.Cell InitialCell;
+
         public NativeParallelHashMap<int, WfcJob.AllowedNeighborModule> Modules;
         public NativeArray<Direction> directions;
 
@@ -41,13 +51,17 @@ namespace MagusStudios.WaveFunctionCollapse
             // First, create the mapping
             moduleKeyToIndex = new Dictionary<int, int>();
             moduleIndexToKey = new Dictionary<int, int>();
+            moduleIndexToKeyArray = new int[moduleDict.Count];
             int mappingCount = 0;
             foreach (KeyValuePair<int, WfcTileRules.AllowedNeighbors> kvp in moduleDict)
             {
                 moduleKeyToIndex[kvp.Key] = mappingCount;
                 moduleIndexToKey[mappingCount] = kvp.Key;
+                moduleIndexToKeyArray[mappingCount] = kvp.Key;
                 mappingCount++;
             }
+
+            InitialCell = WfcJob.Cell.CreateWithAllTiles(moduleDict.Count);
 
             // Fill modules and weights
             int moduleIndex = 0;

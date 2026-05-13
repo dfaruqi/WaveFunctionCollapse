@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: beae97538c3876345b52a7626f849c40, type: 3}
   m_Name: bush
   m_EditorClassIdentifier: 
-  m_Sprite: {fileID: 667726452, guid: 97302feb356ae704982291096d877297, type: 3}
+  m_Sprite: {fileID: 747654291, guid: de9000e6191b2f8428f5a026ac0848be, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_Transform:
     e00: 1

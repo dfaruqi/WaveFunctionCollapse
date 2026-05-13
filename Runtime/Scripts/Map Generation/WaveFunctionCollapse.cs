@@ -185,7 +185,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     for (int blockX = passStartBlockX; blockX < size.x; blockX += 2)
                     {
                         WfcBlockState wfcBlockState = new WfcBlockState(new Vector2Int(blockSize.x + 2, blockSize.y + 2),
-                            this.Template.TileRules.Modules.Count, template, blockSeedGenerator,
+                            this.Template.TileRules.Modules.Count, template,
                             GetBorders(output, blockX, blockY, size, blockSize,
                                 wfcBiomeData.moduleKeyToIndex[template.DefaultTileKey]));
 

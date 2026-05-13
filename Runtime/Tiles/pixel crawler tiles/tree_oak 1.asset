@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9b82be4499b2f1742a502c15ba762a7e, type: 3}
-  m_Name: tree_pine
+  m_Name: tree_oak 1
   m_EditorClassIdentifier: 
   m_Sprite: {fileID: 667726452, guid: de9000e6191b2f8428f5a026ac0848be, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -31,20 +31,20 @@ MonoBehaviour:
     e31: 0
     e32: 0
     e33: 1
-  m_InstancedGameObject: {fileID: 5175393040003911526, guid: 2d54b0e005f312a4e9fb95f7bcd958a6, type: 3}
+  m_InstancedGameObject: {fileID: 0}
   m_Flags: 1
   m_ColliderType: 1
-  Prefab: {fileID: 0}
+  Prefab: {fileID: 5175393040003911526, guid: 4928461b78156f843b5d40efee8ed443, type: 3}
   spawnPossibilities:
-  - Prefab: {fileID: 232473318689221817, guid: ab4816b6135fc0b4ca90e358a0c5ace7, type: 3}
+  - Prefab: {fileID: 8114358232926681367, guid: 17a51d98afaa79343a4666b60141e91a, type: 3}
     Weight: 0.5
-  - Prefab: {fileID: 232473318689221817, guid: 141517e4c2ca08645966ff7834fd4d9a, type: 3}
+  - Prefab: {fileID: 856219059340844848, guid: 3d517fac6159e4b4d85a4c9b5280fbb2, type: 3}
     Weight: 1
-  - Prefab: {fileID: 232473318689221817, guid: 6f2ed3c80230a2e49b00b8db22690fdc, type: 3}
+  - Prefab: {fileID: 3828430725938869677, guid: 42e5d015ba824294da14c6e304fe8d41, type: 3}
     Weight: 2
-  - Prefab: {fileID: 232473318689221817, guid: 56def761e54431846ac8c79fa79254fa, type: 3}
+  - Prefab: {fileID: 5647608082983193403, guid: d8c0eb6dc5f4a004bada456c0c1f6769, type: 3}
     Weight: 2
-  - Prefab: {fileID: 5175393040003911526, guid: 2d54b0e005f312a4e9fb95f7bcd958a6, type: 3}
+  - Prefab: {fileID: 5175393040003911526, guid: 4928461b78156f843b5d40efee8ed443, type: 3}
     Weight: 3
   tileSpritePossibilities:
   - {fileID: 667726452, guid: de9000e6191b2f8428f5a026ac0848be, type: 3}
