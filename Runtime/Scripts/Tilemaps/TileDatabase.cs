@@ -35,7 +35,7 @@ namespace MagusStudios.WaveFunctionCollapse
             return Tiles.First(kvp => kvp.Value.name == tile.name).Key;
         }
 
-        public bool TryGetKeyFromMapTile(TileBase tile, out int key)
+        public bool TryGetKeyFromMapTile(Tile tile, out int key)
         {
             try
             {
@@ -57,11 +57,11 @@ namespace MagusStudios.WaveFunctionCollapse
             int count = 0;
             foreach (Vector3Int pos in tilemap.cellBounds.allPositionsWithin)
             {
-                TileBase tilebase = tilemap.GetTile(pos);
-                if (TryGetKeyFromMapTile(tilebase, out int id)) continue;
-                if (tilebase == null) continue;
+                Tile tile = tilemap.GetTile(pos) as Tile;
+                if (tile == null) continue;
+                if (TryGetKeyFromMapTile(tile, out int key)) continue;
 
-                Tiles.Add(count, tilebase as Tile);
+                Tiles.Add(count, tile);
                 count++;
             }
         }

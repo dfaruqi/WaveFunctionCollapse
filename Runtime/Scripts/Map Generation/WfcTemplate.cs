@@ -35,7 +35,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 if (tileBase == null) continue;
 
                 //int tileKey = 0;
-                if (!tileDatabase.TryGetKeyFromMapTile(tileBase, out int tileKey))
+                if (!tileDatabase.TryGetKeyFromMapTile(tileBase as Tile, out int tileKey))
                 {
                     Debug.LogError($"Tile \"{tileBase.name}\" not found in the database. Aborting.");
                     return;
@@ -60,7 +60,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 {
                     TileBase neighborTileBase = tilemap.GetTile(pos + direction.ToVector3Int());
                     if (neighborTileBase == null) continue;
-                    if (!tileDatabase.TryGetKeyFromMapTile(neighborTileBase, out int neighborTileKey))
+                    if (!tileDatabase.TryGetKeyFromMapTile(neighborTileBase as Tile, out int neighborTileKey))
                     {
                         Debug.LogError($"Tile \"{neighborTileBase.name}\" not found in the database. Aborting.");
                         return;
