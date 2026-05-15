@@ -38,7 +38,21 @@ namespace MagusStudios.WaveFunctionCollapse
             EditorGUILayout.Space();
             EditorGUILayout.PropertyField(tileRulesProperty);
             EditorGUILayout.Space();
+
+            EditorGUILayout.BeginHorizontal();
             EditorGUILayout.PropertyField(weightsProperty);
+            if (GUILayout.Button("New", GUILayout.Width(64)))
+            {
+                CreateAndAssignWeightsAsset(copyFromExisting: false);
+            }
+            using (new EditorGUI.DisabledScope(_template.Weights == null))
+            {
+                if (GUILayout.Button("Copy", GUILayout.Width(64)))
+                {
+                    CreateAndAssignWeightsAsset(copyFromExisting: true);
+                }
+            }
+            EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space();
             EditorGUILayout.PropertyField(defaultTileIdProperty);
             EditorGUILayout.Space();
@@ -153,6 +167,38 @@ namespace MagusStudios.WaveFunctionCollapse
             EditorGUILayout.EndVertical();
 
             return modified;
+        }
+
+        private void CreateAndAssignWeightsAsset(bool copyFromExisting)
+        {
+            WfcWeights source = copyFromExisting ? _template.Weights : null;
+            string folder = WfcEditorUtils.GetActiveProjectFolder();
+            string baseName = source != null ? $"{source.name}_Copy" : $"{_template.name}_Weights";
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{baseName}.asset");
+
+            WfcWeights weights;
+            if (source != null)
+            {
+                weights = Object.Instantiate(source);
+                AssetDatabase.CreateAsset(weights, path);
+            }
+            else
+            {
+                weights = ScriptableObject.CreateInstance<WfcWeights>();
+                AssetDatabase.CreateAsset(weights, path);
+            }
+            AssetDatabase.SaveAssets();
+
+            weightsProperty.objectReferenceValue = weights;
+            serializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(_template);
+
+            EditorGUIUtility.PingObject(weights);
+            string title = source != null ? "WfcWeights Copied" : "WfcWeights Created";
+            string body = source != null
+                ? $"Copied \"{source.name}\" to:\n{path}\n\nIt has been assigned to template \"{_template.name}\"."
+                : $"Created new WfcWeights asset at:\n{path}\n\nIt has been assigned to template \"{_template.name}\".";
+            EditorUtility.DisplayDialog(title, body, "OK");
         }
 
         private void DrawSpritePreview(int tileKey)

@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5a9db1701e618924ea39a7df177ae893, type: 3}
-  m_Name: grass_flower
+  m_Name: grass_flower_white
   m_EditorClassIdentifier: 
   m_Sprite: {fileID: 867458302, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -44,12 +44,3 @@ MonoBehaviour:
   - {fileID: 1220653117, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
   - {fileID: 658632046, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
   - {fileID: -1064974950, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: -1868229065, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: 265877446, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: -792161782, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: -792778976, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: 1881358220, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: -1218387206, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: 195902800, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: -716992763, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}
-  - {fileID: -1135751112, guid: 0a95ed064a75d3c45a2e451b99118cb4, type: 3}

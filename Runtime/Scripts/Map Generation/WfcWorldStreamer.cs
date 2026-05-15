@@ -522,9 +522,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 OnChunkDrawn?.Invoke(chunkPos, chunkData, biome);
             }
         }
-
-
-        // ── Optimized GenerateBlocks ──────────────────────────────────────────────
+        
         private async Task GenerateBlocks(HashSet<Vector2Int>[] blocksToGenerate)
         {
             _stateDict.Clear();
@@ -598,7 +596,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         BiomeData = wfcBiomeData,
                         Task = IsOutputValid(
                             kvp.Value.Output, kvp.Key, layer,
-                            wfcBiomeData.moduleIndexToKeyArray),
+                            wfcBiomeData.moduleIndexToKey),
                     });
                 }
 
@@ -614,7 +612,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     else
                         UpdateChunksFromBlock(
                             entry.ChunkPos, layer, entry.BlockState.Output,
-                            entry.BiomeData.moduleIndexToKeyArray,
+                            entry.BiomeData.moduleIndexToKey,
                             entry.BiomeData.Template.DefaultTileKey);
 
                     // Return to pool instead of disposing.
@@ -861,6 +859,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     return false;
                 }
 
+                // output[] is in index space; adjacency sets and borders are in key space.
+                int currentTileKey = moduleIndexToKey[output[i]];
+
                 // tile left
                 int leftNeighborTileKey;
                 if (localX == 0)
@@ -879,9 +880,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     leftNeighborTileKey = moduleIndexToKey[leftTileNeighborIndex];
                 }
 
-                if (!adjacency[leftNeighborTileKey][(int)Direction.Right].Contains(output[i]))
+                if (!adjacency[leftNeighborTileKey][(int)Direction.Right].Contains(currentTileKey))
                 {
-                    Debug.Log($"{leftNeighborTileKey} does not contain {output[i]} in its right neighbors");
+                    Debug.Log($"{leftNeighborTileKey} does not contain {currentTileKey} in its right neighbors");
                     return false;
                 }
 
@@ -903,9 +904,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     rightNeighborTileKey = moduleIndexToKey[rightTileNeighborIndex];
                 }
 
-                if (!adjacency[rightNeighborTileKey][(int)Direction.Left].Contains(output[i]))
+                if (!adjacency[rightNeighborTileKey][(int)Direction.Left].Contains(currentTileKey))
                 {
-                    Debug.Log($"{rightNeighborTileKey} does not contain {output[i]} in its left neighbors");
+                    Debug.Log($"{rightNeighborTileKey} does not contain {currentTileKey} in its left neighbors");
                     return false;
                 }
 
@@ -927,9 +928,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     upNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
                 }
 
-                if (!adjacency[upNeighborTileKey][(int)Direction.Down].Contains(output[i]))
+                if (!adjacency[upNeighborTileKey][(int)Direction.Down].Contains(currentTileKey))
                 {
-                    Debug.Log($"{upNeighborTileKey} does not contain {output[i]} in its down neighbors");
+                    Debug.Log($"{upNeighborTileKey} does not contain {currentTileKey} in its down neighbors");
                     return false;
                 }
 
@@ -951,9 +952,9 @@ namespace MagusStudios.WaveFunctionCollapse
                     downNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
                 }
 
-                if (!adjacency[downNeighborTileKey][(int)Direction.Up].Contains(output[i]))
+                if (!adjacency[downNeighborTileKey][(int)Direction.Up].Contains(currentTileKey))
                 {
-                    Debug.Log($"{downNeighborTileKey} does not contain {output[i]} in its up neighbors");
+                    Debug.Log($"{downNeighborTileKey} does not contain {currentTileKey} in its up neighbors");
                     return false;
                 }
             }
