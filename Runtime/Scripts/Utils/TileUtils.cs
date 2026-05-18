@@ -20,42 +20,14 @@ namespace MagusStudios.WaveFunctionCollapse
 
         /// <summary>
         /// Deterministically hashes (x, y) into a uniform integer in [0, n).
-        /// Specialized inline MurmurHash3 over exactly two uints — no buffer, no loop, no modulo.
-        /// Output differs from the previous Span+modulo path; the mapping is still uniform and
-        /// deterministic, but a given (x,y,n) will pick a different sprite variant than before.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int HashPosition(int x, int y, int n)
         {
-            const uint c1 = 0xcc9e2d51;
-            const uint c2 = 0x1b873593;
-
-            uint h = 0; // seed
-
-            uint k = (uint)x * c1;
-            k = (k << 15) | (k >> 17);
-            k *= c2;
-            h ^= k;
-            h = (h << 13) | (h >> 19);
-            h = h * 5 + 0xe6546b64;
-
-            k = (uint)y * c1;
-            k = (k << 15) | (k >> 17);
-            k *= c2;
-            h ^= k;
-            h = (h << 13) | (h >> 19);
-            h = h * 5 + 0xe6546b64;
-
-            // Length finalizer (8 bytes consumed, no tail).
-            h ^= 8;
-            h ^= h >> 16;
-            h *= 0x85ebca6b;
-            h ^= h >> 13;
-            h *= 0xc2b2ae35;
-            h ^= h >> 16;
-
-            // Lemire's multiplicative reduction: avoids `% n`.
-            return (int)(((ulong)h * (ulong)(uint)n) >> 32);
+            uint hash = (uint)x * 0x9E3779B1u + (uint)y * 0x517CC1B7u;
+            hash ^= hash >> 16;
+            hash *= 0x45D9F3Bu;
+            hash ^= hash >> 16;
+            return (int)(hash % (uint)n);
         }
         
         public static float HashPositionFloat(Vector2Int pos)

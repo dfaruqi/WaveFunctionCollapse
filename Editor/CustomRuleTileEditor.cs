@@ -14,11 +14,11 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 case CustomRuleTile.Neighbor.SpecifiedTile:
                     GUI.DrawTexture(rect, arrows[GetArrowIndex(position)]);
-                    DrawTintOverlay(rect, new Color(0f, 0.5f, 1f, 0.3f));
+                    DrawTintOverlay(rect, new Color(1f, .4f, 1f, 0.28f));
                     break;
                 case CustomRuleTile.Neighbor.NotSpecifiedTile:
                     GUI.DrawTexture(rect, arrows[9]);
-                    DrawTintOverlay(rect, new Color(0f, 0.5f, 1f, 0.3f));
+                    DrawTintOverlay(rect, new Color(1f, .4f, 1f, 0.28f));
                     break;
                 default:
                     base.RuleOnGUI(rect, position, neighbor);
