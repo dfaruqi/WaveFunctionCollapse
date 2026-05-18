@@ -87,16 +87,15 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 tileAnimationData.animatedSprites = m_AnimatedSprites;
                 tileAnimationData.animationSpeed = UnityEngine.Random.Range(m_MinSpeed, m_MaxSpeed);
-                tileAnimationData.animationStartTime = m_AnimationStartTime;
-                tileAnimationData.flags = m_TileAnimationFlags;
-                if (0 < m_AnimationStartFrame && m_AnimationStartFrame <= m_AnimatedSprites.Length)
-                {
-                    var tilemapComponent = tilemap.GetComponent<Tilemap>();
-                    if (tilemapComponent != null && tilemapComponent.animationFrameRate > 0)
-                        tileAnimationData.animationStartTime =
-                            (m_AnimationStartFrame - 1) / tilemapComponent.animationFrameRate;
-                }
 
+                // Phase-lock the animation start to wall clock so tiles spawned at different times
+                // share a cycle. Assumes the tilemap's own animation speed is 1 — reading
+                // tilemap.GetComponent<Tilemap>().animationFrameRate on every call would be expensive.
+                float duration = m_AnimatedSprites.Length / tileAnimationData.animationSpeed;
+                tileAnimationData.animationStartTime =
+                    Time.time % duration / duration * m_AnimatedSprites.Length;
+
+                tileAnimationData.flags = m_TileAnimationFlags;
                 return true;
             }
 
