@@ -36,16 +36,16 @@ MonoBehaviour:
           _serializedList:
           - Key: 0
             Value:
-              serializedList: 01000000050000000600000007000000
+              serializedList: 0100000005000000060000000700000040000000
           - Key: 1
             Value:
-              serializedList: 01000000090000001200000013000000
+              serializedList: 0100000009000000120000001300000040000000
           - Key: 2
             Value:
-              serializedList: 01000000070000000f00000012000000
+              serializedList: 01000000070000000f0000001200000040000000
           - Key: 3
             Value:
-              serializedList: 01000000050000000e00000013000000
+              serializedList: 01000000050000000e0000001300000040000000
     - Key: 2
       Value:
         Neighbors:
@@ -446,6 +446,22 @@ MonoBehaviour:
           - Key: 3
             Value:
               serializedList: 170000001800000019000000
+    - Key: 64
+      Value:
+        Neighbors:
+          _serializedList:
+          - Key: 0
+            Value:
+              serializedList: 01000000
+          - Key: 1
+            Value:
+              serializedList: 01000000
+          - Key: 2
+            Value:
+              serializedList: 01000000
+          - Key: 3
+            Value:
+              serializedList: 01000000
     - Key: 27
       Value:
         Neighbors:

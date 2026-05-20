@@ -1,0 +1,145 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c295fc148608d254a9e29021220f7ad1, type: 3}
+  m_Name: newraine_oak_forest_weights
+  m_EditorClassIdentifier: 
+  DefaultWeight: 0
+  Weights:
+    _serializedList:
+    - Key: 0
+      Value: 280
+    - Key: 1
+      Value: 35
+    - Key: 2
+      Value: 30
+    - Key: 3
+      Value: 30
+    - Key: 4
+      Value: 30
+    - Key: 5
+      Value: 35
+    - Key: 6
+      Value: 35
+    - Key: 7
+      Value: 35
+    - Key: 8
+      Value: 35
+    - Key: 9
+      Value: 35
+    - Key: 10
+      Value: 35
+    - Key: 11
+      Value: 20
+    - Key: 12
+      Value: 20
+    - Key: 13
+      Value: 20
+    - Key: 14
+      Value: 35
+    - Key: 15
+      Value: 35
+    - Key: 16
+      Value: 35
+    - Key: 17
+      Value: 35
+    - Key: 18
+      Value: 35
+    - Key: 19
+      Value: 35
+    - Key: 20
+      Value: 20
+    - Key: 21
+      Value: 20
+    - Key: 22
+      Value: 20
+    - Key: 23
+      Value: 20
+    - Key: 24
+      Value: 20
+    - Key: 25
+      Value: 20
+    - Key: 26
+      Value: 20
+    - Key: 27
+      Value: 50
+    - Key: 28
+      Value: 50
+    - Key: 29
+      Value: 50
+    - Key: 30
+      Value: 50
+    - Key: 31
+      Value: 50
+    - Key: 32
+      Value: 50
+    - Key: 33
+      Value: 50
+    - Key: 34
+      Value: 50
+    - Key: 35
+      Value: 50
+    - Key: 36
+      Value: 50
+    - Key: 37
+      Value: 50
+    - Key: 38
+      Value: 50
+    - Key: 39
+      Value: 50
+    - Key: 40
+      Value: 50
+    - Key: 41
+      Value: 50
+    - Key: 42
+      Value: 50
+    - Key: 43
+      Value: 50
+    - Key: 44
+      Value: 50
+    - Key: 45
+      Value: 50
+    - Key: 46
+      Value: 50
+    - Key: 47
+      Value: 50
+    - Key: 48
+      Value: 50
+    - Key: 49
+      Value: 50
+    - Key: 50
+      Value: 50
+    - Key: 51
+      Value: 10
+    - Key: 52
+      Value: 10
+    - Key: 53
+      Value: 10
+    - Key: 54
+      Value: 10
+    - Key: 55
+      Value: 18
+    - Key: 56
+      Value: 18
+    - Key: 57
+      Value: 120
+    - Key: 58
+      Value: 6
+    - Key: 59
+      Value: 6
+    - Key: 60
+      Value: 10
+    - Key: 61
+      Value: 100
+    - Key: 62
+      Value: 20
+    - Key: 63
+      Value: 80

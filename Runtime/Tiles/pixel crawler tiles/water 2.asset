@@ -10,9 +10,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 881c50cf9eb3f0140bdc7f37a604f7d3, type: 3}
-  m_Name: water_outer_corner_SE
+  m_Name: water 2
   m_EditorClassIdentifier: 
-  m_Sprite: {fileID: -2144622975, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
+  m_Sprite: {fileID: 979585491, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_Transform:
     e00: 1
@@ -35,10 +35,7 @@ MonoBehaviour:
   m_Flags: 1
   m_ColliderType: 1
   m_AnimatedSprites:
-  - {fileID: -2144622975, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
-  - {fileID: -1165869815, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
-  - {fileID: -1327402227, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
-  - {fileID: 1823055975, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
+  - {fileID: 979585491, guid: 25c6ab5ffc90d6d4aa46aba842da1f71, type: 3}
   m_MinSpeed: 1
   m_MaxSpeed: 1
   m_AnimationStartTime: 0
