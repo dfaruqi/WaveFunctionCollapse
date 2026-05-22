@@ -14,6 +14,7 @@ namespace MagusStudios.WaveFunctionCollapse
         private TileDatabase _tileDatabase;
         private Vector2 scrollPosition;
         private Dictionary<int, bool> foldoutStates = new Dictionary<int, bool>();
+        private Dictionary<Tile, Editor> tileEditors = new Dictionary<Tile, Editor>();
         private int newKeyInput = 0;
         private Tile newTileInput;
 
@@ -23,6 +24,26 @@ namespace MagusStudios.WaveFunctionCollapse
         private void OnEnable()
         {
             _tileDatabase = (TileDatabase)target;
+        }
+
+        private void OnDisable()
+        {
+            foreach (var editor in tileEditors.Values)
+            {
+                if (editor != null)
+                    DestroyImmediate(editor);
+            }
+            tileEditors.Clear();
+        }
+
+        private Editor GetTileEditor(Tile tile)
+        {
+            if (!tileEditors.TryGetValue(tile, out Editor editor) || editor == null)
+            {
+                editor = CreateEditor(tile);
+                tileEditors[tile] = editor;
+            }
+            return editor;
         }
 
         public override void OnInspectorGUI()
@@ -146,19 +167,6 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 EditorGUILayout.Space();
 
-                // Large sprite preview
-                if (tile.sprite != null)
-                {
-                    EditorGUILayout.LabelField("Sprite Preview:", EditorStyles.boldLabel);
-                    Rect largePreviewRect = GUILayoutUtility.GetRect(100, 100, GUILayout.Height(100));
-                    DrawSpritePreview(largePreviewRect, tile.sprite);
-                    EditorGUILayout.Space();
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox("No sprite assigned to this tile.", MessageType.Warning);
-                }
-
                 // Key field (editable)
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Key:", GUILayout.Width(50));
@@ -185,59 +193,29 @@ namespace MagusStudios.WaveFunctionCollapse
                 }
                 EditorGUILayout.EndHorizontal();
 
-                // Tile properties using direct object field
+                // Tile reference field (editable — drag a different tile in to replace)
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Tile:", GUILayout.Width(50));
+                Tile newTile = (Tile)EditorGUILayout.ObjectField(tile, typeof(Tile), false);
+                EditorGUILayout.EndHorizontal();
+
+                if (newTile != tile)
+                {
+                    _tileDatabase.Tiles[key] = newTile;
+                    EditorUtility.SetDirty(_tileDatabase);
+                    EditorGUILayout.EndVertical();
+                    return;
+                }
+
+                // Tile properties — mirror what the default inspector shows for the Tile asset
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Tile Properties:", EditorStyles.boldLabel);
 
-                // Create a temporary serialized object for the tile to use PropertyField
-                SerializedObject tileSerializedObject = new SerializedObject(tile);
-                tileSerializedObject.Update();
-
-                SerializedProperty iterator = tileSerializedObject.GetIterator();
-                bool enterChildren = true;
-                while (iterator.NextVisible(enterChildren))
+                Editor tileEditor = GetTileEditor(tile);
+                if (tileEditor != null)
                 {
-                    if (iterator.name == "m_Script") // Skip the script reference
-                        continue;
-
-                    EditorGUILayout.PropertyField(iterator, true);
-                    enterChildren = false;
+                    tileEditor.OnInspectorGUI();
                 }
-
-                if (tileSerializedObject.ApplyModifiedProperties())
-                {
-                    EditorUtility.SetDirty(tile);
-                }
-
-                // Quick access to test the database methods
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Debug Info:", EditorStyles.miniBoldLabel);
-                EditorGUILayout.BeginHorizontal();
-                if (GUILayout.Button("Test TryGetTile", EditorStyles.miniButton))
-                {
-                    if (_tileDatabase.TryGetTile(key, out Tile foundTile))
-                    {
-                        Debug.Log($"Successfully found tile with key {key}: {foundTile.name}");
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"Failed to find tile with key {key}");
-                    }
-                }
-
-                if (GUILayout.Button("Test GetKeyFromMapTile", EditorStyles.miniButton))
-                {
-                    try
-                    {
-                        int foundKey = _tileDatabase.GetKeyFromMapTile(tile);
-                        Debug.Log($"Tile {tile.name} has key: {foundKey}");
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogError($"Error getting key: {e.Message}");
-                    }
-                }
-                EditorGUILayout.EndHorizontal();
             }
 
             EditorGUILayout.EndVertical();
