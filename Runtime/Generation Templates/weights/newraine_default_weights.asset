@@ -20,11 +20,11 @@ MonoBehaviour:
     - Key: 1
       Value: 30
     - Key: 2
-      Value: 40
+      Value: 32
     - Key: 3
-      Value: 40
+      Value: 32
     - Key: 4
-      Value: 40
+      Value: 32
     - Key: 5
       Value: 30
     - Key: 6
@@ -38,11 +38,11 @@ MonoBehaviour:
     - Key: 10
       Value: 30
     - Key: 11
-      Value: 40
+      Value: 32
     - Key: 12
       Value: 40
     - Key: 13
-      Value: 40
+      Value: 32
     - Key: 14
       Value: 30
     - Key: 15
@@ -56,19 +56,19 @@ MonoBehaviour:
     - Key: 19
       Value: 30
     - Key: 20
-      Value: 40
+      Value: 32
     - Key: 21
-      Value: 40
+      Value: 32
     - Key: 22
-      Value: 40
+      Value: 32
     - Key: 23
-      Value: 40
+      Value: 32
     - Key: 24
-      Value: 40
+      Value: 32
     - Key: 25
-      Value: 40
+      Value: 32
     - Key: 26
-      Value: 40
+      Value: 32
     - Key: 27
       Value: 50
     - Key: 28
@@ -134,7 +134,7 @@ MonoBehaviour:
     - Key: 58
       Value: 20
     - Key: 59
-      Value: 35
+      Value: 60
     - Key: 60
       Value: 10
     - Key: 61
@@ -144,4 +144,6 @@ MonoBehaviour:
     - Key: 63
       Value: 70
     - Key: 64
-      Value: 0
+      Value: 120
+    - Key: 65
+      Value: 340

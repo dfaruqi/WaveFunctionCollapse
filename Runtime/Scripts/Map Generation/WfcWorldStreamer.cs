@@ -454,7 +454,7 @@ namespace MagusStudios.WaveFunctionCollapse
                     for (int subX = 0; subX < CHUNK_SIZE; subX += SUB_BLOCK_SIZE)
                     {
                         BoundsInt subBounds = new BoundsInt(
-                            chunkOrigin + new Vector3Int(subX, subY, 0), subSize);
+                            chunkOrigin + new Vector3Int(subX, subY, 0), subSize);qq
                         TargetTilemap.SetTilesBlock(subBounds, _subNullTileBuffer);
 
                         yield return null;
