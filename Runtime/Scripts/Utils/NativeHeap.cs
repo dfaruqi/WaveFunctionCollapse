@@ -556,6 +556,7 @@ namespace Unity.Collections {
 
         [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
         internal unsafe void IsValidIndexInternal(NativeHeapIndex index, ref bool result, ref int errorCode) {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
 
             if (index.StructureId != Id) {
@@ -576,6 +577,7 @@ namespace Unity.Collections {
                 result = false;
                 return;
             }
+#endif
         }
 
         #endregion
