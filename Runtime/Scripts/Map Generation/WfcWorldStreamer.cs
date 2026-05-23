@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -29,9 +30,19 @@ namespace MagusStudios.WaveFunctionCollapse
         [SerializeField] bool clearOnStart = true;
         [SerializeField] Biome biome;
 
+        [SerializeField, Tooltip(
+            "Directory where chunk region files are saved and loaded. " +
+            "Absolute paths are used as-is; relative paths are resolved under " +
+            "Application.persistentDataPath. Leave empty for the default ('tile_chunks' " +
+            "under persistentDataPath). Can also be assigned from code before this " +
+            "component's Awake runs.")]
+        private string chunkDirectory = "tile_chunks";
+
         // ~ Constants ~
 
-        // directory where chunks are saved
+        // Resolved absolute directory where chunks are saved. Populated in Awake from
+        // `chunkDirectory` — until then it is null, which we use as the "not yet initialized" signal
+        // for the ChunkDirectory setter below.
         private string _chunkDirectory;
 
         // size of loaded/saved chunks, must be even
@@ -47,6 +58,16 @@ namespace MagusStudios.WaveFunctionCollapse
         // Computed from CHUNK_SIZE so it always divides the chunk evenly. Targets ~16 per side, capped
         // at CHUNK_SIZE/2 so we always get at least 4 sub-blocks per chunk.
         private static readonly int SUB_BLOCK_SIZE = ComputeSubBlockSize(CHUNK_SIZE);
+
+        // Region files bundle a REGION_SIZE x REGION_SIZE grid of chunks into a single file on disk —
+        // one file per 256 chunks instead of one-per-chunk. All chunk payloads are fixed-size, so the
+        // file layout is just slot N at byte offset (N * CHUNK_PAYLOAD_BYTES); no header needed.
+        private const int REGION_SIZE = 16;
+        private const int CHUNK_PAYLOAD_BYTES = CHUNK_SIZE * CHUNK_SIZE * sizeof(int);
+
+        // Per-region lock so concurrent SaveChunkAsync/LoadChunkAsync calls hitting the same region
+        // file serialize (two chunks in one region are saved in parallel during a normal cycle).
+        private readonly ConcurrentDictionary<Vector2Int, object> _regionLocks = new();
 
         private static int ComputeSubBlockSize(int chunkSize)
         {
@@ -178,9 +199,40 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private Vector2Int[] BlockOffsets = new Vector2Int[4];
 
+        /// <summary>
+        /// Directory where chunk region files are read and written.
+        /// Before Awake: returns the configured value (assignable by a caller or inspector).
+        /// After Awake: returns the resolved absolute path; assignments are ignored with a warning,
+        /// since chunks would already be loaded from the previous location.
+        /// </summary>
+        public string ChunkDirectory
+        {
+            get => _chunkDirectory ?? chunkDirectory;
+            set
+            {
+                if (_chunkDirectory != null)
+                {
+                    Debug.LogWarning(
+                        $"[{nameof(WfcWorldStreamer)}] ChunkDirectory assignment after Awake is ignored; " +
+                        "set it before Awake or via the inspector.");
+                    return;
+                }
+                chunkDirectory = value;
+            }
+        }
+
+        private static string ResolveChunkDirectory(string configured)
+        {
+            if (string.IsNullOrWhiteSpace(configured))
+                return Path.Combine(Application.persistentDataPath, "tile_chunks");
+            if (Path.IsPathRooted(configured))
+                return configured;
+            return Path.Combine(Application.persistentDataPath, configured);
+        }
+
         private void Awake()
         {
-            _chunkDirectory = Path.Combine(Application.persistentDataPath, "tile_chunks");
+            _chunkDirectory = ResolveChunkDirectory(chunkDirectory);
 
             // create chunk directory if it does not exist
             // todo add save files
@@ -242,6 +294,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         async Task InitializeAsync()
         {
+            await MigrateLegacyChunkFilesAsync();
             _allGeneratedBlocks = await LoadChunkLayersAsync(GetAllGeneratedBlocksPath());
             _initialized = true;
         }
@@ -1101,36 +1154,148 @@ namespace MagusStudios.WaveFunctionCollapse
             return (new Vector2Int(chunkX, chunkY), new Vector2Int(localX, localY));
         }
 
+        private static (Vector2Int region, int slot) GetRegionAndSlot(Vector2Int chunkCoord)
+        {
+            int regionX = (int)Math.Floor((double)chunkCoord.x / REGION_SIZE);
+            int regionY = (int)Math.Floor((double)chunkCoord.y / REGION_SIZE);
+            int localX = ((chunkCoord.x % REGION_SIZE) + REGION_SIZE) % REGION_SIZE;
+            int localY = ((chunkCoord.y % REGION_SIZE) + REGION_SIZE) % REGION_SIZE;
+            int slot = localY * REGION_SIZE + localX;
+            return (new Vector2Int(regionX, regionY), slot);
+        }
+
+        private string GetRegionPath(Vector2Int region) =>
+            Path.Combine(_chunkDirectory, $"region_{region.x}_{region.y}.bin");
+
+        private object GetRegionLock(Vector2Int region) =>
+            _regionLocks.GetOrAdd(region, _ => new object());
+
         private Task SaveChunkAsync(Vector2Int chunkCoord, int[] tiles)
         {
-            // chunkCoord is a struct (captured by value); _chunkDirectory is an immutable string.
-            // Everything — path construction, FileStream syscall, the write — runs on the thread pool.
-            // Using a non-async delegate avoids the async-state-machine box, and writing the int[]
-            // directly via MemoryMarshal removes the byte[] copy and the ArrayPool round-trip.
-            string chunkDirectory = _chunkDirectory;
+            (Vector2Int region, int slot) = GetRegionAndSlot(chunkCoord);
+            string path = GetRegionPath(region);
+            object regionLock = GetRegionLock(region);
+
+            // Snapshot the tile data on the main thread — _loadedChunks arrays are mutated by the next
+            // generation cycle, and Task.Run won't observe a consistent buffer if we capture by ref.
+            byte[] payload = ArrayPool<byte>.Shared.Rent(CHUNK_PAYLOAD_BYTES);
+            MemoryMarshal.AsBytes(tiles.AsSpan()).CopyTo(payload);
+
             return Task.Run(() =>
             {
-                string path = Path.Combine(chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
-                using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write,
-                    FileShare.None, bufferSize: 4096, useAsync: false);
-                fs.Write(MemoryMarshal.AsBytes(tiles.AsSpan()));
+                try
+                {
+                    lock (regionLock)
+                    {
+                        using FileStream fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write,
+                            FileShare.None, bufferSize: 4096, useAsync: false);
+                        fs.Seek((long)slot * CHUNK_PAYLOAD_BYTES, SeekOrigin.Begin);
+                        fs.Write(payload, 0, CHUNK_PAYLOAD_BYTES);
+                    }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(payload);
+                }
             });
         }
 
-        private async Task<int[]> LoadChunkAsync(Vector2Int chunkCoord)
+        private Task<int[]> LoadChunkAsync(Vector2Int chunkCoord)
         {
-            string path = Path.Combine(_chunkDirectory, $"chunk_{chunkCoord.x}_{chunkCoord.y}.bin");
-            // ConfigureAwait(false): continuations resume on the thread pool instead of being posted
-            // back to Unity's main thread (where they'd contend for frame time).
-            await using FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-                bufferSize: 4096, useAsync: true);
+            (Vector2Int region, int slot) = GetRegionAndSlot(chunkCoord);
+            string path = GetRegionPath(region);
+            object regionLock = GetRegionLock(region);
 
-            byte[] buffer = new byte[CHUNK_SIZE * CHUNK_SIZE * sizeof(int)];
-            await fs.ReadAsync(buffer).ConfigureAwait(false);
+            // Region I/O can't use FileStream's async path because we hold a lock across the read —
+            // awaiting inside a lock is a deadlock hazard. Push the whole synchronous read to the
+            // thread pool instead so the main thread never blocks on filesystem I/O.
+            return Task.Run(() =>
+            {
+                lock (regionLock)
+                {
+                    using FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+                        FileShare.Read, bufferSize: 4096, useAsync: false);
+                    fs.Seek((long)slot * CHUNK_PAYLOAD_BYTES, SeekOrigin.Begin);
 
-            int[] tiles = new int[CHUNK_SIZE * CHUNK_SIZE];
-            Buffer.BlockCopy(buffer, 0, tiles, 0, buffer.Length);
-            return tiles;
+                    byte[] buffer = new byte[CHUNK_PAYLOAD_BYTES];
+                    int totalRead = 0;
+                    while (totalRead < CHUNK_PAYLOAD_BYTES)
+                    {
+                        int n = fs.Read(buffer, totalRead, CHUNK_PAYLOAD_BYTES - totalRead);
+                        if (n == 0) break;
+                        totalRead += n;
+                    }
+
+                    int[] tiles = new int[CHUNK_SIZE * CHUNK_SIZE];
+                    Buffer.BlockCopy(buffer, 0, tiles, 0, CHUNK_PAYLOAD_BYTES);
+                    return tiles;
+                }
+            });
+        }
+
+        // One-time migration: the previous on-disk format wrote one file per chunk. On first launch
+        // after this change, pull every legacy `chunk_X_Y.bin` into its corresponding region file and
+        // delete the original. Idempotent — if there are no legacy files, this is a cheap directory
+        // listing and returns immediately.
+        private async Task MigrateLegacyChunkFilesAsync()
+        {
+            string directory = _chunkDirectory;
+            await Task.Run(() =>
+            {
+                string[] oldFiles = Directory.GetFiles(directory, "chunk_*.bin");
+                if (oldFiles.Length == 0) return;
+
+                Debug.Log($"[{nameof(WfcWorldStreamer)}] Migrating {oldFiles.Length} legacy chunk file(s) into region files");
+
+                byte[] buffer = new byte[CHUNK_PAYLOAD_BYTES];
+                int migrated = 0;
+                foreach (string oldPath in oldFiles)
+                {
+                    string name = Path.GetFileNameWithoutExtension(oldPath);
+                    string[] parts = name.Split('_');
+                    if (parts.Length != 3 || parts[0] != "chunk") continue;
+                    if (!int.TryParse(parts[1], out int x)) continue;
+                    if (!int.TryParse(parts[2], out int y)) continue;
+
+                    try
+                    {
+                        using (FileStream src = new FileStream(oldPath, FileMode.Open, FileAccess.Read,
+                                   FileShare.Read, bufferSize: 4096, useAsync: false))
+                        {
+                            if (src.Length != CHUNK_PAYLOAD_BYTES)
+                            {
+                                Debug.LogWarning($"[{nameof(WfcWorldStreamer)}] Legacy chunk {oldPath} has size {src.Length}, expected {CHUNK_PAYLOAD_BYTES}; skipping");
+                                continue;
+                            }
+                            int read = 0;
+                            while (read < CHUNK_PAYLOAD_BYTES)
+                            {
+                                int n = src.Read(buffer, read, CHUNK_PAYLOAD_BYTES - read);
+                                if (n == 0) break;
+                                read += n;
+                            }
+                        }
+
+                        (Vector2Int region, int slot) = GetRegionAndSlot(new Vector2Int(x, y));
+                        string regionPath = GetRegionPath(region);
+                        using (FileStream dst = new FileStream(regionPath, FileMode.OpenOrCreate,
+                                   FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: false))
+                        {
+                            dst.Seek((long)slot * CHUNK_PAYLOAD_BYTES, SeekOrigin.Begin);
+                            dst.Write(buffer, 0, CHUNK_PAYLOAD_BYTES);
+                        }
+
+                        File.Delete(oldPath);
+                        migrated++;
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"[{nameof(WfcWorldStreamer)}] Failed to migrate {oldPath}: {e.Message}");
+                    }
+                }
+
+                Debug.Log($"[{nameof(WfcWorldStreamer)}] Migrated {migrated}/{oldFiles.Length} legacy chunk file(s)");
+            }).ConfigureAwait(false);
         }
 
 

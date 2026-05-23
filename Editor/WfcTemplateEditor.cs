@@ -306,10 +306,14 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 if (HandleTileDragAndDrop(boxRect, out List<int> droppedKeys))
                 {
-                    Undo.RecordObject(_template.TileRules, "Add Allowed Neighbor");
-                    foreach (int k in droppedKeys)
-                        neighborSet.Add(k);
-                    modified = true;
+                    List<int> newKeys = droppedKeys.Where(k => !neighborSet.Contains(k)).ToList();
+                    if (newKeys.Count > 0)
+                    {
+                        Undo.RecordObject(_template.TileRules, "Add Allowed Neighbor");
+                        foreach (int k in newKeys)
+                            neighborSet.Add(k);
+                        modified = true;
+                    }
                 }
             }
 
