@@ -1,4 +1,4 @@
-﻿using AYellowpaper.SerializedCollections;
+using AYellowpaper.SerializedCollections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -75,41 +75,63 @@ namespace MagusStudios.WaveFunctionCollapse
 
             EditorGUILayout.Space();
 
-            if (_template.TileRules == null || _template.TileRules.Modules.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No modules defined.", MessageType.Info);
-                serializedObject.ApplyModifiedProperties();
-                return;
-            }
-
-            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = _template.TileRules.Modules;
-
             if (_template.TileDatabase == null)
             {
                 EditorGUILayout.HelpBox("Tile Database is not assigned. Please assign a TileDatabase to view sprites.",
                     MessageType.Warning);
             }
 
+            if (_template.TileRules == null)
+            {
+                EditorGUILayout.HelpBox("Tile Rules is not assigned. Please assign a WfcTileRules asset to add or edit modules.",
+                    MessageType.Warning);
+                serializedObject.ApplyModifiedProperties();
+                return;
+            }
+
+            SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules = _template.TileRules.Modules;
+            if (modules == null)
+            {
+                modules = new SerializedDictionary<int, WfcTileRules.AllowedNeighbors>();
+                _template.TileRules.Modules = modules;
+            }
+
             EditorGUILayout.LabelField("Tile Modules", EditorStyles.boldLabel);
 
             bool wasModified = false;
 
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-
-            List<int> keys = new List<int>(modules.Keys);
-
-            foreach (int tileKey in keys)
+            if (modules.Count == 0)
             {
-                if (DrawTileModule(tileKey, modules[tileKey]))
-                    wasModified = true;
+                EditorGUILayout.HelpBox("No modules defined. Drag tiles into the box below to add new modules.", MessageType.Info);
+            }
+            else
+            {
+                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+
+                List<int> keys = new List<int>(modules.Keys);
+
+                foreach (int tileKey in keys)
+                {
+                    if (DrawTileModule(tileKey, modules[tileKey]))
+                        wasModified = true;
+                }
+
+                EditorGUILayout.EndScrollView();
             }
 
-            EditorGUILayout.EndScrollView();
+            EditorGUILayout.Space();
+            if (DrawAddModuleDropArea(modules))
+                wasModified = true;
 
             serializedObject.ApplyModifiedProperties();
 
             if (wasModified)
+            {
                 EditorUtility.SetDirty(_template);
+                EditorUtility.SetDirty(_template.TileRules);
+                if (_template.Weights != null)
+                    EditorUtility.SetDirty(_template.Weights);
+            }
         }
 
         private bool DrawTileModule(int tileKey, WfcTileRules.AllowedNeighbors module)
@@ -156,11 +178,12 @@ namespace MagusStudios.WaveFunctionCollapse
 
             EditorGUILayout.EndHorizontal();
 
-            if (neighborFoldouts[tileKey] && module.Neighbors != null)
+            if (neighborFoldouts[tileKey])
             {
                 EditorGUILayout.Space();
                 EditorGUI.indentLevel++;
-                DrawCompatibleNeighborsWithSprites(module.Neighbors);
+                if (DrawCompatibleNeighborsWithSprites(module))
+                    modified = true;
                 EditorGUI.indentLevel--;
             }
 
@@ -228,46 +251,169 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void DrawCompatibleNeighborsWithSprites(
-            SerializedDictionary<Direction, SerializedHashSet<int>> compatibleNeighbors)
+        private bool DrawCompatibleNeighborsWithSprites(WfcTileRules.AllowedNeighbors module)
         {
+            bool modified = false;
+
+            if (module.Neighbors == null) return false;
+
+            SerializedDictionary<Direction, SerializedHashSet<int>> compatibleNeighbors = module.Neighbors;
+
             foreach (Direction direction in System.Enum.GetValues(typeof(Direction)))
             {
-                if (!compatibleNeighbors.ContainsKey(direction)) continue;
+                if (!compatibleNeighbors.ContainsKey(direction))
+                    compatibleNeighbors[direction] = new SerializedHashSet<int>();
 
-                var compatibleTiles = compatibleNeighbors[direction].ToList();
-                if (compatibleTiles == null || compatibleTiles.Count == 0) continue;
+                SerializedHashSet<int> neighborSet = compatibleNeighbors[direction];
 
-                EditorGUILayout.BeginVertical("box");
+                Rect boxRect = EditorGUILayout.BeginVertical("box");
                 EditorGUILayout.LabelField($"{direction}:", EditorStyles.miniLabel);
 
-                int spriteCount = compatibleTiles.Count;
-                int maxSpritesPerRow = Mathf.Max(1, Mathf.FloorToInt(EditorGUIUtility.currentViewWidth / 45f));
-                int rowsNeeded = Mathf.CeilToInt((float)spriteCount / maxSpritesPerRow);
-
-                int currentIndex = 0;
-                for (int row = 0; row < rowsNeeded; row++)
+                List<int> compatibleTiles = neighborSet.ToList();
+                if (compatibleTiles.Count == 0)
                 {
-                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField("(drop tiles here)", EditorStyles.centeredGreyMiniLabel);
+                }
+                else
+                {
+                    int spriteCount = compatibleTiles.Count;
+                    int maxSpritesPerRow = Mathf.Max(1, Mathf.FloorToInt(EditorGUIUtility.currentViewWidth / 45f));
+                    int rowsNeeded = Mathf.CeilToInt((float)spriteCount / maxSpritesPerRow);
 
-                    int spritesThisRow = Mathf.Min(maxSpritesPerRow, spriteCount - currentIndex);
-                    GUILayout.FlexibleSpace();
-
-                    for (int i = 0; i < spritesThisRow; i++)
+                    int currentIndex = 0;
+                    for (int row = 0; row < rowsNeeded; row++)
                     {
-                        DrawSmallNeighborSprite(compatibleTiles[currentIndex]);
-                        currentIndex++;
+                        EditorGUILayout.BeginHorizontal();
 
-                        if (i < spritesThisRow - 1)
-                            GUILayout.Space(5);
+                        int spritesThisRow = Mathf.Min(maxSpritesPerRow, spriteCount - currentIndex);
+                        GUILayout.FlexibleSpace();
+
+                        for (int i = 0; i < spritesThisRow; i++)
+                        {
+                            DrawSmallNeighborSprite(compatibleTiles[currentIndex]);
+                            currentIndex++;
+
+                            if (i < spritesThisRow - 1)
+                                GUILayout.Space(5);
+                        }
+
+                        GUILayout.FlexibleSpace();
+                        EditorGUILayout.EndHorizontal();
                     }
-
-                    GUILayout.FlexibleSpace();
-                    EditorGUILayout.EndHorizontal();
                 }
 
                 EditorGUILayout.EndVertical();
+
+                if (HandleTileDragAndDrop(boxRect, out List<int> droppedKeys))
+                {
+                    Undo.RecordObject(_template.TileRules, "Add Allowed Neighbor");
+                    foreach (int k in droppedKeys)
+                        neighborSet.Add(k);
+                    modified = true;
+                }
             }
+
+            return modified;
+        }
+
+        private bool DrawAddModuleDropArea(SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules)
+        {
+            EditorGUILayout.LabelField("Add Module", EditorStyles.boldLabel);
+
+            Rect dropArea = GUILayoutUtility.GetRect(0, 48, GUILayout.ExpandWidth(true));
+            GUI.Box(dropArea, "Drag tile(s) here to add new module entries", EditorStyles.helpBox);
+
+            if (!HandleTileDragAndDrop(dropArea, out List<int> droppedKeys))
+                return false;
+
+            Undo.RecordObject(_template.TileRules, "Add Module");
+
+            bool modified = false;
+            foreach (int key in droppedKeys)
+            {
+                if (modules.ContainsKey(key))
+                {
+                    Debug.Log($"Module for tile key {key} already exists.");
+                    continue;
+                }
+
+                modules[key] = new WfcTileRules.AllowedNeighbors
+                {
+                    Neighbors = new SerializedDictionary<Direction, SerializedHashSet<int>>
+                    {
+                        { Direction.Up, new SerializedHashSet<int>() },
+                        { Direction.Down, new SerializedHashSet<int>() },
+                        { Direction.Left, new SerializedHashSet<int>() },
+                        { Direction.Right, new SerializedHashSet<int>() },
+                    }
+                };
+
+                if (_template.Weights != null && !_template.Weights.TryGetWeight(key, out _))
+                {
+                    Undo.RecordObject(_template.Weights, "Add Module Weight");
+                    _template.Weights[key] = _template.Weights.DefaultWeight;
+                }
+
+                neighborFoldouts[key] = true;
+                modified = true;
+            }
+
+            return modified;
+        }
+
+        /// <summary>
+        /// Handles drag-and-drop of Tile assets into the given drop area.
+        /// Logs an error and skips any dragged Tile that is not in the assigned TileDatabase.
+        /// Never modifies the TileDatabase itself.
+        /// </summary>
+        private bool HandleTileDragAndDrop(Rect dropArea, out List<int> droppedTileKeys)
+        {
+            droppedTileKeys = null;
+
+            Event evt = Event.current;
+            if (evt.type != EventType.DragUpdated && evt.type != EventType.DragPerform)
+                return false;
+            if (!dropArea.Contains(evt.mousePosition))
+                return false;
+
+            bool anyTileDragged = DragAndDrop.objectReferences.Any(o => o is Tile);
+            if (!anyTileDragged)
+                return false;
+
+            DragAndDrop.visualMode = (_template.TileDatabase != null)
+                ? DragAndDropVisualMode.Copy
+                : DragAndDropVisualMode.Rejected;
+
+            if (evt.type != EventType.DragPerform)
+                return false;
+
+            DragAndDrop.AcceptDrag();
+            evt.Use();
+
+            if (_template.TileDatabase == null)
+            {
+                Debug.LogError("Cannot resolve dragged tile(s): TileDatabase is not assigned to this template.");
+                return false;
+            }
+
+            droppedTileKeys = new List<int>();
+            foreach (Object obj in DragAndDrop.objectReferences)
+            {
+                if (!(obj is Tile tile)) continue;
+
+                if (_template.TileDatabase.TryGetKeyFromMapTile(tile, out int key))
+                {
+                    droppedTileKeys.Add(key);
+                }
+                else
+                {
+                    Debug.LogError(
+                        $"Tile \"{tile.name}\" is not in the TileDatabase \"{_template.TileDatabase.name}\". " +
+                        "Add it to the TileDatabase first — the template editor will not modify the database.");
+                }
+            }
+
+            return droppedTileKeys.Count > 0;
         }
 
         private void DrawSmallNeighborSprite(int tileKey)
