@@ -15,7 +15,7 @@ using Random = Unity.Mathematics.Random;
 namespace MagusStudios.WaveFunctionCollapse
 {
     /// <summary>
-    /// Performs a simplified Wave Function Collapse using adjacency constraints defined in a WfcModuleSet.
+    /// Performs a simplified Wave Function Collapse using adjacency constraints and weights defined in a WfcModuleSet.
     /// </summary>
     public class WaveFunctionCollapse : MonoBehaviour
     {
@@ -121,6 +121,13 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <returns></returns>
         public int[,] GenerateMapInBlocks(WfcTemplate template, Vector2Int size, Vector2Int blockSize)
         {
+            if (template.Weights == null)
+            {
+                Debug.LogError(
+                    $"[{nameof(WaveFunctionCollapse)}] Template '{template.name}' has no WfcWeights assigned. Aborting chunked generation.");
+                return new int[blockSize.x * size.x, blockSize.y * size.y];
+            }
+
             // create algorithm lookup data and state
             WfcBiomeData wfcBiomeData = new WfcBiomeData(template);
             WfcBlockState[,] stateGrid = new WfcBlockState[size.x, size.y];
@@ -157,10 +164,9 @@ namespace MagusStudios.WaveFunctionCollapse
             // When generating blocks, we employ the modifying-in-blocks approach. The output is initiated to
             // a trivial solution. This means filling the map completely with one default tile, like grass, for
             // example. Then, when a block is generated, a wave function collapse job is scheduled that has a map
-            // size slightly bigger than the block size, typically +1 tile on every side (so blocks are 2 tiles larger
-            // overall in each dimension). The tiles that overlap other blocks are regenerated so adjacent blocks
-            // can get enough constraint information from neighboring blocks, thus preventing errors at borders
-            // or corners. 
+            // size slightly bigger than the block size. The tiles that overlap other blocks are regenerated so
+            // adjacent blocks can get enough constraint information from neighboring blocks, thus preventing errors
+            // at borders or corners. 
 
             // This running output is in index-space rather than key-space. See WfcGlobals
             int[,] output = new int[totalMapWidth, totalMapHeight];
@@ -223,9 +229,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 // Complete all jobs
                 NativeArray<JobHandle> jobHandlesNative =
-                    new NativeArray<JobHandle>(WfcUtils.AllDirectionOrders.Length, Allocator.Persistent);
-
-                jobHandlesNative = new NativeArray<JobHandle>(jobHandles.Count, Allocator.Persistent);
+                    new NativeArray<JobHandle>(jobHandles.Count, Allocator.Persistent);
                 for (int i = 0; i < jobHandles.Count; i++)
                 {
                     jobHandlesNative[i] = jobHandles[i];
@@ -247,6 +251,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
                         WfcBlockState wfcBlockState = stateGrid[blockX, blockY];
 
+                        int errorCellCount = 0;
                         for (int i = 0; i < (trueBlockWidth) * (trueBlockHeight); i++)
                         {
                             int y = i / trueBlockWidth;
@@ -261,7 +266,23 @@ namespace MagusStudios.WaveFunctionCollapse
 
                             int unconverted = wfcBlockState.Output[i];
 
-                            output[x + startX, y + startY] = unconverted;
+                            // Skip uncollapsed cells so the existing default-tile fill stays in
+                            // place. Writing -1 here would also poison borders read by neighboring
+                            // blocks in later passes.
+                            if (unconverted < 0)
+                            {
+                                errorCellCount++;
+                                continue;
+                            }
+
+                            output[worldX, worldY] = unconverted;
+                        }
+
+                        if (errorCellCount > 0)
+                        {
+                            Debug.LogWarning(
+                                $"[{nameof(WaveFunctionCollapse)}] Block ({blockX}, {blockY}) on pass {pass} " +
+                                $"produced {errorCellCount} uncollapsed cell(s); leaving default fill in place for those cells.");
                         }
 
                         wfcBlockState.Dispose();
@@ -403,6 +424,13 @@ namespace MagusStudios.WaveFunctionCollapse
         /// <exception cref="System.Exception">Throws an exception if the tile set has more than the 128-tile maximum or no tiles. </exception>
         public int[,] GenerateMap(WfcTemplate template, Vector2Int mapSize, WfcUtils.Borders borders = default)
         {
+            if (template.Weights == null)
+            {
+                Debug.LogError(
+                    $"[{nameof(WaveFunctionCollapse)}] Template '{template.name}' has no WfcWeights assigned. Aborting simple generation.");
+                return new int[mapSize.x, mapSize.y];
+            }
+
             SerializedDictionary<int, WfcTileRules.AllowedNeighbors> moduleDict = template.TileRules.Modules;
 
             // First, check that the module set does not have too many tiles

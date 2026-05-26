@@ -864,6 +864,15 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             if (!_biomeDataCache.TryGetValue(template, out WfcBiomeData data))
             {
+                if (template.Weights == null)
+                {
+                    Debug.LogError(
+                        $"[{nameof(WfcWorldStreamer)}] Template '{template.name}' has no WfcWeights assigned. " +
+                        "Aborting chunk generation for this template.");
+                    throw new InvalidOperationException(
+                        $"WfcTemplate '{template.name}' is missing its WfcWeights asset.");
+                }
+
                 data = new WfcBiomeData(template);
                 _biomeDataCache[template] = data;
             }

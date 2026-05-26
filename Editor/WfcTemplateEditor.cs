@@ -21,6 +21,38 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private Dictionary<int, bool> neighborFoldouts = new Dictionary<int, bool>();
 
+        private static GUIStyle _largeHelpBoxStyle;
+        private static GUIStyle LargeHelpBoxStyle
+        {
+            get
+            {
+                if (_largeHelpBoxStyle == null)
+                {
+                    _largeHelpBoxStyle = new GUIStyle(EditorStyles.helpBox)
+                    {
+                        fontSize = EditorStyles.helpBox.fontSize + 3,
+                        richText = true,
+                    };
+                }
+                return _largeHelpBoxStyle;
+            }
+        }
+
+        private static void LargeHelpBox(string message, MessageType type)
+        {
+            string iconName = type switch
+            {
+                MessageType.Info => "console.infoicon",
+                MessageType.Warning => "console.warnicon",
+                MessageType.Error => "console.erroricon",
+                _ => null,
+            };
+            GUIContent content = iconName != null
+                ? EditorGUIUtility.TrTextContentWithIcon(message, iconName)
+                : new GUIContent(message);
+            GUILayout.Box(content, LargeHelpBoxStyle, GUILayout.ExpandWidth(true));
+        }
+
         private void OnEnable()
         {
             _template = (WfcTemplate)target;
@@ -34,9 +66,41 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             serializedObject.Update();
 
+            if (_template.TileDatabase == null)
+            {
+                LargeHelpBox("Tile Database is not assigned. Please assign a TileDatabase to view sprites.",
+                    MessageType.Warning);
+            }
+
+            if (_template.TileRules == null)
+            {
+                LargeHelpBox("Tile Rules is not assigned. Please assign a WfcTileRules asset to add or edit modules.",
+                    MessageType.Warning);
+            }
+
+            if (_template.Weights == null)
+            {
+                LargeHelpBox("Weights is not assigned. Please assign a WfcWeights asset to control tile selection probabilities.",
+                    MessageType.Warning);
+            }
+
             EditorGUILayout.PropertyField(tileDatabaseProperty);
             EditorGUILayout.Space();
+
+            EditorGUILayout.BeginHorizontal();
             EditorGUILayout.PropertyField(tileRulesProperty);
+            if (GUILayout.Button("New", GUILayout.Width(64)))
+            {
+                CreateAndAssignTileRulesAsset(copyFromExisting: false);
+            }
+            using (new EditorGUI.DisabledScope(_template.TileRules == null))
+            {
+                if (GUILayout.Button("Copy", GUILayout.Width(64)))
+                {
+                    CreateAndAssignTileRulesAsset(copyFromExisting: true);
+                }
+            }
+            EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space();
 
             EditorGUILayout.BeginHorizontal();
@@ -75,16 +139,8 @@ namespace MagusStudios.WaveFunctionCollapse
 
             EditorGUILayout.Space();
 
-            if (_template.TileDatabase == null)
-            {
-                EditorGUILayout.HelpBox("Tile Database is not assigned. Please assign a TileDatabase to view sprites.",
-                    MessageType.Warning);
-            }
-
             if (_template.TileRules == null)
             {
-                EditorGUILayout.HelpBox("Tile Rules is not assigned. Please assign a WfcTileRules asset to add or edit modules.",
-                    MessageType.Warning);
                 serializedObject.ApplyModifiedProperties();
                 return;
             }
@@ -100,11 +156,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
             bool wasModified = false;
 
-            if (modules.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No modules defined. Drag tiles into the box below to add new modules.", MessageType.Info);
-            }
-            else
+            if (modules.Count > 0)
             {
                 scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
 
@@ -120,7 +172,7 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             EditorGUILayout.Space();
-            if (DrawAddModuleDropArea(modules))
+            if (DrawAddModuleDropArea(modules, isEmpty: modules.Count == 0))
                 wasModified = true;
 
             serializedObject.ApplyModifiedProperties();
@@ -190,6 +242,38 @@ namespace MagusStudios.WaveFunctionCollapse
             EditorGUILayout.EndVertical();
 
             return modified;
+        }
+
+        private void CreateAndAssignTileRulesAsset(bool copyFromExisting)
+        {
+            WfcTileRules source = copyFromExisting ? _template.TileRules : null;
+            string folder = WfcEditorUtils.GetActiveProjectFolder();
+            string baseName = source != null ? $"{source.name}_Copy" : $"{_template.name}_TileRules";
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{baseName}.asset");
+
+            WfcTileRules tileRules;
+            if (source != null)
+            {
+                tileRules = Object.Instantiate(source);
+                AssetDatabase.CreateAsset(tileRules, path);
+            }
+            else
+            {
+                tileRules = ScriptableObject.CreateInstance<WfcTileRules>();
+                AssetDatabase.CreateAsset(tileRules, path);
+            }
+            AssetDatabase.SaveAssets();
+
+            tileRulesProperty.objectReferenceValue = tileRules;
+            serializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(_template);
+
+            EditorGUIUtility.PingObject(tileRules);
+            string title = source != null ? "WfcTileRules Copied" : "WfcTileRules Created";
+            string body = source != null
+                ? $"Copied \"{source.name}\" to:\n{path}\n\nIt has been assigned to template \"{_template.name}\"."
+                : $"Created new WfcTileRules asset at:\n{path}\n\nIt has been assigned to template \"{_template.name}\".";
+            EditorUtility.DisplayDialog(title, body, "OK");
         }
 
         private void CreateAndAssignWeightsAsset(bool copyFromExisting)
@@ -320,12 +404,24 @@ namespace MagusStudios.WaveFunctionCollapse
             return modified;
         }
 
-        private bool DrawAddModuleDropArea(SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules)
+        private bool DrawAddModuleDropArea(SerializedDictionary<int, WfcTileRules.AllowedNeighbors> modules, bool isEmpty)
         {
-            EditorGUILayout.LabelField("Add Module", EditorStyles.boldLabel);
-
-            Rect dropArea = GUILayoutUtility.GetRect(0, 48, GUILayout.ExpandWidth(true));
-            GUI.Box(dropArea, "Drag tile(s) here to add new module entries", EditorStyles.helpBox);
+            Rect dropArea;
+            if (isEmpty)
+            {
+                GUIContent content = EditorGUIUtility.TrTextContentWithIcon(
+                    "No modules defined. Drag tile(s) here to add new module entries.",
+                    "console.infoicon");
+                GUIStyle style = new GUIStyle(LargeHelpBoxStyle) { alignment = TextAnchor.MiddleLeft };
+                float height = Mathf.Max(48f, style.CalcHeight(content, EditorGUIUtility.currentViewWidth));
+                dropArea = GUILayoutUtility.GetRect(0, height, GUILayout.ExpandWidth(true));
+                GUI.Box(dropArea, content, style);
+            }
+            else
+            {
+                dropArea = GUILayoutUtility.GetRect(0, 48, GUILayout.ExpandWidth(true));
+                GUI.Box(dropArea, "Drag tile(s) here to add new module entries", EditorStyles.helpBox);
+            }
 
             if (!HandleTileDragAndDrop(dropArea, out List<int> droppedKeys))
                 return false;
