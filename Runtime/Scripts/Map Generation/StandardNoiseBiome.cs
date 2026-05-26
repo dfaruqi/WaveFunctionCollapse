@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
-    [CreateAssetMenu(fileName = "MeadowBiome", menuName = "World Generation/Meadow Biome")]
+    [CreateAssetMenu(fileName = "StandardNoiseBiome", menuName = "World Generation/Biomes/StandardNoiseBiome")]
     public class StandardNoiseBiome : Biome
     {
         [System.Serializable]
