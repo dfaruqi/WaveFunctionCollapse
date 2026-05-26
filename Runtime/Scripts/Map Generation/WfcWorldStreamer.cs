@@ -107,6 +107,7 @@ namespace MagusStudios.WaveFunctionCollapse
         [SerializeField] int drawDistance = 1;
         [SerializeField] bool clearOnStart = true;
         [SerializeField] Biome biome;
+        [SerializeField] WorldObjectDatabase worldObjectDatabase;
 
         [SerializeField, Tooltip(
             "Directory where chunk region files are saved and loaded. " +
@@ -229,6 +230,10 @@ namespace MagusStudios.WaveFunctionCollapse
         // iterate it synchronously (queueing spawn requests by value), so the next draw is free
         // to clear and refill it.
         private readonly List<ChunkData.TilePrefabSpawn> _tilePrefabSpawnBuffer = new();
+
+        // Reused across chunks during the post-generation pass — the biome fills it, we drain it
+        // into the chunk's WorldObjects list, then clear and reuse for the next chunk.
+        private readonly List<ChunkData.WorldObjectSpawn> _postGenerationSpawnBuffer = new();
 
         // ~ State: I/O ~
 
@@ -420,6 +425,13 @@ namespace MagusStudios.WaveFunctionCollapse
 
             yield return null;
 
+            // - Post-generation (generates other world object spawns) -
+
+            // Only chunks whose layer-4 block just completed are fully generated this cycle —
+            // layers 0-3 still have pending work via cascading dependencies. For those chunks that are finished,
+            // we will run the post-generation step, which spawns other gameobjects that are not attached to tiles.
+            RunPostGeneration(_blocksToGenerate[3]);
+            
             // - Unload chunks -
 
             _chunksToUnload.Clear();
@@ -772,6 +784,78 @@ namespace MagusStudios.WaveFunctionCollapse
                     _loadedChunks[targetChunk].Tiles[localPosition] =
                         output >= 0 ? moduleIndexToKey[output] : defaultTileKey;
                 }
+            }
+        }
+
+        // Asks the biome to emit any world-object spawns for each chunk that finished all four
+        // generation layers this cycle, then appends them to the chunk's persisted WorldObjects
+        // list so the next save round captures them. A single scratch list is reused across all
+        // chunks — the biome stub on Biome itself does nothing, so this is effectively free
+        // until a subclass overrides PostGenerate.
+        private void RunPostGeneration(HashSet<Vector2Int> fullyGeneratedChunks)
+        {
+            foreach (Vector2Int chunkPos in fullyGeneratedChunks)
+            {
+                if (!_loadedChunks.TryGetValue(chunkPos, out ChunkData chunkData))
+                {
+                    Debug.LogWarning(
+                        $"[{nameof(WfcWorldStreamer)}] Post-generation skipped for chunk {chunkPos}: " +
+                        "chunk is not loaded. A layer-4 block completed for it this cycle, so this " +
+                        "shouldn't happen — likely a bug in chunk load/unload ordering.");
+                    continue;
+                }
+
+                WfcTemplate template = biome.GetTemplate(chunkPos);
+
+                TileDatabase tileDatabase = template.TileDatabase;
+
+                _postGenerationSpawnBuffer.Clear();
+                BiomePostGenContext context = new BiomePostGenContext(
+                    chunkPos, CHUNK_SIZE, chunkData.Tiles,
+                    tileDatabase, worldObjectDatabase, _postGenerationSpawnBuffer);
+
+                try
+                {
+                    biome.PostGenerate(in context);
+                }
+                catch (Exception e)
+                {
+                    // Discard this chunk's partial spawn output so we don't persist a half-built
+                    // list. Log the biome type, asset name, and the count at time-of-throw so it's
+                    // possible to pinpoint which call inside PostGenerate blew up.
+                    Debug.LogError(
+                        $"[{nameof(WfcWorldStreamer)}] Biome '{biome.name}' " +
+                        $"({biome.GetType().Name}) threw during PostGenerate for chunk {chunkPos} " +
+                        $"after emitting {_postGenerationSpawnBuffer.Count} spawn(s). Discarding " +
+                        $"this chunk's post-generation output.\n{e}",
+                        biome);
+                    _postGenerationSpawnBuffer.Clear();
+                    continue;
+                }
+
+                int count = _postGenerationSpawnBuffer.Count;
+                if (count == 0) continue;
+
+                List<ChunkData.WorldObjectSpawn> worldObjects = chunkData.WorldObjects;
+                int newTotal = worldObjects.Count + count;
+
+                // SaveChunkAsync silently truncates over MAX_OBJECTS_PER_CHUNK. Surface that here
+                // so the biome author finds out at generation time, not when objects mysteriously
+                // disappear after a save/reload cycle.
+                if (newTotal > MAX_OBJECTS_PER_CHUNK)
+                {
+                    Debug.LogWarning(
+                        $"[{nameof(WfcWorldStreamer)}] Post-generation in chunk {chunkPos} " +
+                        $"produced {count} spawn(s); appending would bring the chunk total to " +
+                        $"{newTotal}, exceeding MAX_OBJECTS_PER_CHUNK={MAX_OBJECTS_PER_CHUNK}. " +
+                        "Excess entries will be truncated on save.");
+                }
+
+                if (worldObjects.Capacity < newTotal)
+                    worldObjects.Capacity = newTotal;
+
+                for (int i = 0; i < count; i++)
+                    worldObjects.Add(_postGenerationSpawnBuffer[i]);
             }
         }
 
