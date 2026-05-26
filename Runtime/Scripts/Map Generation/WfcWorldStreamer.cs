@@ -810,13 +810,14 @@ namespace MagusStudios.WaveFunctionCollapse
                 TileDatabase tileDatabase = template.TileDatabase;
 
                 _postGenerationSpawnBuffer.Clear();
+                Random rng = new Random(TileUtils.HashWorldChunk(Seed, chunkPos));
                 BiomePostGenContext context = new BiomePostGenContext(
                     chunkPos, CHUNK_SIZE, chunkData.Tiles,
-                    tileDatabase, worldObjectDatabase, _postGenerationSpawnBuffer);
+                    tileDatabase, worldObjectDatabase, _postGenerationSpawnBuffer, rng);
 
                 try
                 {
-                    biome.PostGenerate(in context);
+                    biome.PostGenerate(ref context);
                 }
                 catch (Exception e)
                 {

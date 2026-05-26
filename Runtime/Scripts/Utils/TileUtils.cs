@@ -10,8 +10,6 @@ namespace MagusStudios.WaveFunctionCollapse
 {
     public static class TileUtils
     {
-        public static int TILE_SIZE = 1; // In Unity Coordinate System units
-
         /// <summary>
         /// Deterministically hashes a Vector2Int into a uniform integer in [0, n).
         /// </summary>
@@ -88,6 +86,45 @@ namespace MagusStudios.WaveFunctionCollapse
             return h;
         }
 
+        /// <summary>
+        /// Specialized inline MurmurHash3 over a fixed 8-byte input (chunk.x, chunk.y). Use for
+        /// per-chunk RNG streams that don't need a sub-block discriminator (e.g. biome post-gen).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint HashWorldChunk(uint seed, Vector2Int chunk)
+        {
+            const uint c1 = 0xcc9e2d51;
+            const uint c2 = 0x1b873593;
+
+            uint h = seed;
+
+            // Word 0: chunk.x
+            uint k = (uint)chunk.x * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+            h = (h << 13) | (h >> 19);
+            h = h * 5 + 0xe6546b64;
+
+            // Word 1: chunk.y
+            k = (uint)chunk.y * c1;
+            k = (k << 15) | (k >> 17);
+            k *= c2;
+            h ^= k;
+            h = (h << 13) | (h >> 19);
+            h = h * 5 + 0xe6546b64;
+
+            // Length finalizer (8 bytes).
+            h ^= 8;
+            h ^= h >> 16;
+            h *= 0x85ebca6b;
+            h ^= h >> 13;
+            h *= 0xc2b2ae35;
+            h ^= h >> 16;
+
+            return h;
+        }
+
         public static void LoadMapData(Tilemap tilemap, int[,] map, TileDatabase tileDatabase)
         {
             // Clear the tilemap first
@@ -117,16 +154,6 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Refresh the tilemap so it updates visually
             tilemap.RefreshAllTiles();
-        }
-
-        public static Vector2Int GetWorldPosition(Vector2Int chunkPos, Vector2Int localTilePosition, int chunkSize)
-        {
-            return chunkPos * chunkSize + localTilePosition;
-        }
-
-        public static Vector2 GetTileCenterPosition(Vector2Int tilePosition)
-        {
-            return tilePosition + Vector2.one * 0.5f * TILE_SIZE;
         }
 
         public static int Flatten(Vector2Int position, int width)

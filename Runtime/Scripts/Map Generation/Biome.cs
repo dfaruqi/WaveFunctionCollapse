@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Random = Unity.Mathematics.Random;
 
 namespace MagusStudios.WaveFunctionCollapse
 {
@@ -14,7 +15,7 @@ namespace MagusStudios.WaveFunctionCollapse
         /// Useful for resources that need strictly-controlled expected yield per chunk or do not fit well onto the
         /// grid. Examples: cattails (custom spawned on water edge tiles), mushroom clusters, sticks.
         /// </summary>
-        public virtual void PostGenerate(in BiomePostGenContext context)
+        public virtual void PostGenerate(ref BiomePostGenContext context)
         {
         }
     }
@@ -24,21 +25,29 @@ namespace MagusStudios.WaveFunctionCollapse
     /// array with the active databases so subclasses can read tiles and emit spawns by either
     /// integer id (fast) or string name (ergonomic; looked up through the databases).
     /// </summary>
-    public readonly struct BiomePostGenContext
+    public struct BiomePostGenContext
     {
         public readonly Vector2Int ChunkPos;
         public readonly int ChunkSize;
 
+        /// <summary>
+        /// Per-chunk deterministic RNG, seeded from the world seed and chunk position. Use this
+        /// for any random decisions in <see cref="Biome.PostGenerate"/> so that a chunk regenerates
+        /// identically across runs. 
+        /// </summary>
+        public Random Rng;
+
         private readonly int[] _tiles;
         private readonly List<ChunkData.WorldObjectSpawn> _spawns;
-        
+
         private readonly TileDatabase _tileDatabase;
         private readonly WorldObjectDatabase _objectDatabase;
 
         public BiomePostGenContext(
             Vector2Int chunkPos, int chunkSize, int[] tiles,
             TileDatabase tileDatabase, WorldObjectDatabase objectDatabase,
-            List<ChunkData.WorldObjectSpawn> spawns)
+            List<ChunkData.WorldObjectSpawn> spawns,
+            Random rng)
         {
             ChunkPos = chunkPos;
             ChunkSize = chunkSize;
@@ -46,6 +55,7 @@ namespace MagusStudios.WaveFunctionCollapse
             _tileDatabase = tileDatabase;
             _objectDatabase = objectDatabase;
             _spawns = spawns;
+            Rng = rng;
         }
 
         /// <summary>Tile id at the given chunk-local cell. Fast — direct array read.</summary>
