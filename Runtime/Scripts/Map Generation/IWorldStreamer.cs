@@ -6,18 +6,15 @@ namespace MagusStudios.WaveFunctionCollapse
     public interface IWorldStreamer
     {
         /// <summary>
-        /// Fired after a chunk has been drawn to the tilemap. The two spawn lists are exposed
-        /// separately because they resolve their prefabs differently:
-        ///   - <paramref name="tilePrefabSpawns"/> comes from GameObjectTiles in the chunk's
-        ///     tile array; the prefab is already known, so no database lookup is needed.
-        ///   - <paramref name="storedWorldObjects"/> are standalone world objects persisted
-        ///     alongside the chunk; they reference prefabs by integer id and are resolved by the
-        ///     subscriber's own WorldObjectDatabase.
+        /// Fired after a chunk has been drawn to the tilemap. <paramref name="spawns"/> is a
+        /// unified, prefab-resolved list combining both GameObjectTile-derived spawns and stored
+        /// world objects (whose prefab ids the streamer has already resolved against its
+        /// WorldObjectDatabase). Subscribers can just instantiate each entry — no database lookup
+        /// required on their side.
         /// </summary>
         public delegate void ChunkDrawnHandler(
             Vector2Int chunkPos,
-            IReadOnlyList<ChunkData.TilePrefabSpawn> tilePrefabSpawns,
-            IReadOnlyList<ChunkData.WorldObjectSpawn> storedWorldObjects,
+            IReadOnlyList<ChunkData.ChunkSpawn> spawns,
             Biome biome);
 
         public delegate void ChunkUndrawnHandler(Vector2Int chunkPos);

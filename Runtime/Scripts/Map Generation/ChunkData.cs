@@ -16,10 +16,12 @@ namespace MagusStudios.WaveFunctionCollapse
         }
         
         /// <summary>
-        /// A spawn derived from a GameObjectTile placed in a chunk's tile array. The prefab is
-        /// taken straight from the tile, so consumers don't need a database lookup.
+        /// A spawn to instantiate inside a chunk, with its prefab already resolved. The streamer
+        /// builds these at draw time from both GameObjectTile cells and stored <see cref="WorldObjectSpawn"/>
+        /// entries (whose prefabIds it resolves against its WorldObjectDatabase), so subscribers
+        /// don't need a database of their own.
         /// </summary>
-        public struct TilePrefabSpawn
+        public struct ChunkSpawn
         {
             public Vector2 localPosition; // local to the chunk, like ChunkData.WorldObjectData
             public GameObject prefab;

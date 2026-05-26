@@ -229,7 +229,7 @@ namespace MagusStudios.WaveFunctionCollapse
         // Reused per-chunk so OnChunkDrawn doesn't allocate a fresh list every draw. Handlers
         // iterate it synchronously (queueing spawn requests by value), so the next draw is free
         // to clear and refill it.
-        private readonly List<ChunkData.TilePrefabSpawn> _tilePrefabSpawnBuffer = new();
+        private readonly List<ChunkData.ChunkSpawn> _chunkSpawnBuffer = new();
 
         // Reused across chunks during the post-generation pass — the biome fills it, we drain it
         // into the chunk's WorldObjects list, then clear and reuse for the next chunk.
@@ -1152,20 +1152,21 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 if (OnChunkDrawn != null)
                 {
-                    BuildTilePrefabSpawnList(chunkPos, tiles, tileDatabase, _tilePrefabSpawnBuffer);
-                    OnChunkDrawn.Invoke(
-                        chunkPos, _tilePrefabSpawnBuffer, chunkData.WorldObjects, biome);
+                    BuildChunkSpawnList(
+                        chunkPos, tiles, tileDatabase, chunkData.WorldObjects, _chunkSpawnBuffer);
+                    OnChunkDrawn.Invoke(chunkPos, _chunkSpawnBuffer, biome);
                 }
             }
         }
 
-        // Walk the chunk's tile array and emit a spawn entry for every GameObjectTile cell.
-        // The prefab is taken straight from the tile, so subscribers don't need a database
-        // lookup — that's the whole point of keeping this list separate from the stored
-        // WorldObjects list (which is prefab-id-keyed and resolved on the consumer side).
-        private void BuildTilePrefabSpawnList(
+        // Build the unified spawn list for a freshly-drawn chunk: every GameObjectTile cell in
+        // the tile array (prefab comes straight from the tile) plus every stored WorldObject
+        // (prefabId resolved against worldObjectDatabase). Subscribers receive a single
+        // ready-to-instantiate list.
+        private void BuildChunkSpawnList(
             Vector2Int chunkPos, int[] tiles, TileDatabase tileDatabase,
-            List<ChunkData.TilePrefabSpawn> output)
+            List<ChunkData.WorldObjectSpawn> storedWorldObjects,
+            List<ChunkData.ChunkSpawn> output)
         {
             output.Clear();
 
@@ -1185,15 +1186,28 @@ namespace MagusStudios.WaveFunctionCollapse
                     Vector2Int worldTilePos = new Vector2Int(chunkOriginX + x, chunkOriginY + y);
                     GameObject prefab = gameObjectTile.GetGameObject(worldTilePos);
                     if (prefab == null) continue;
-                    
-                    output.Add(new ChunkData.TilePrefabSpawn
+
+                    output.Add(new ChunkData.ChunkSpawn
                     {
                         // Local cell-center so a tile at (x, y) spawns at the middle of its cell
-                        // once the spawner adds chunkPos * CHUNK_SIZE.
+                        // once the subscriber adds chunkPos * CHUNK_SIZE.
                         localPosition = new Vector2(x + 0.5f, y + 0.5f),
                         prefab = prefab,
                     });
                 }
+            }
+
+            for (int i = 0; i < storedWorldObjects.Count; i++)
+            {
+                ChunkData.WorldObjectSpawn stored = storedWorldObjects[i];
+                if (!worldObjectDatabase.TryGetObject(stored.prefabId, out GameObject prefab))
+                    continue;
+
+                output.Add(new ChunkData.ChunkSpawn
+                {
+                    localPosition = stored.localPosition,
+                    prefab = prefab,
+                });
             }
         }
 

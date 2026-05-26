@@ -8,7 +8,6 @@ namespace MagusStudios.WaveFunctionCollapse
     public class WorldObjectSpawner : MonoBehaviour
     {
         [SerializeField] private int _spawnsPerFrame = 64;
-        [SerializeField] private WorldObjectDatabase prefabDatabase;
 
         private IWorldStreamer _worldStreamer;
 
@@ -69,8 +68,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void HandleChunkDrawn(
             Vector2Int chunkPos,
-            IReadOnlyList<ChunkData.TilePrefabSpawn> tilePrefabSpawns,
-            IReadOnlyList<ChunkData.WorldObjectSpawn> storedWorldObjects,
+            IReadOnlyList<ChunkData.ChunkSpawn> spawns,
             Biome biome)
         {
             int chunkSize = WfcWorldStreamer.CHUNK_SIZE;
@@ -80,11 +78,9 @@ namespace MagusStudios.WaveFunctionCollapse
             gen++;
             _chunkGeneration[chunkPos] = gen;
 
-            // Tile-derived spawns: prefab comes straight from the GameObjectTile, so no
-            // database lookup is needed.
-            for (int i = 0; i < tilePrefabSpawns.Count; i++)
+            for (int i = 0; i < spawns.Count; i++)
             {
-                ChunkData.TilePrefabSpawn spawn = tilePrefabSpawns[i];
+                ChunkData.ChunkSpawn spawn = spawns[i];
                 if (spawn.prefab == null) continue;
 
                 Vector2 worldPos = (chunkPos * chunkSize) + spawn.localPosition;
@@ -94,25 +90,6 @@ namespace MagusStudios.WaveFunctionCollapse
                     ChunkPos = chunkPos,
                     Generation = gen,
                     Prefab = spawn.prefab,
-                    Position = worldPos,
-                });
-            }
-
-            // Stored world objects: reference prefabs by integer id and need the database to
-            // resolve the actual GameObject.
-            for (int i = 0; i < storedWorldObjects.Count; i++)
-            {
-                ChunkData.WorldObjectSpawn obj = storedWorldObjects[i];
-                if (!prefabDatabase.TryGetObject(obj.prefabId, out var prefab))
-                    continue;
-
-                Vector2 worldPos = (chunkPos * chunkSize) + obj.localPosition;
-
-                _spawnQueue.Enqueue(new SpawnRequest
-                {
-                    ChunkPos = chunkPos,
-                    Generation = gen,
-                    Prefab = prefab,
                     Position = worldPos,
                 });
             }
