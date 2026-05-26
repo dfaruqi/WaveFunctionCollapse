@@ -5,11 +5,12 @@ using UnityEngine.Pool;
 namespace MagusStudios.WaveFunctionCollapse
 {
     [RequireComponent(typeof(WfcWorldStreamer))]
-    public class WfcWorldSpawner : MonoBehaviour
+    public class WorldObjectSpawner : MonoBehaviour
     {
         [SerializeField] private int _spawnsPerFrame = 64;
+        [SerializeField] private WorldObjectDatabase prefabDatabase;
 
-        private WfcWorldStreamer _worldStreamer;
+        private IWorldStreamer _worldStreamer;
 
         private Dictionary<GameObject, ObjectPool<WorldSpawn>> _spawnPools =
             new Dictionary<GameObject, ObjectPool<WorldSpawn>>();
@@ -31,7 +32,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void Awake()
         {
-            _worldStreamer = GetComponent<WfcWorldStreamer>();
+            _worldStreamer = GetComponent<IWorldStreamer>();
         }
 
         private void OnEnable()
@@ -66,7 +67,11 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void HandleChunkDrawn(Vector2Int chunkPos, IReadOnlyList<int> chunkData, Biome biome)
+        private void HandleChunkDrawn(
+            Vector2Int chunkPos,
+            IReadOnlyList<ChunkData.TilePrefabSpawn> tilePrefabSpawns,
+            IReadOnlyList<ChunkData.WorldObjectSpawn> storedWorldObjects,
+            Biome biome)
         {
             int chunkSize = WfcWorldStreamer.CHUNK_SIZE;
             _chunkSpawns[chunkPos] = new List<(WorldSpawn, GameObject)>();
@@ -75,25 +80,40 @@ namespace MagusStudios.WaveFunctionCollapse
             gen++;
             _chunkGeneration[chunkPos] = gen;
 
-            for (int i = 0; i < chunkData.Count; i++)
+            // Tile-derived spawns: prefab comes straight from the GameObjectTile, so no
+            // database lookup is needed.
+            for (int i = 0; i < tilePrefabSpawns.Count; i++)
             {
-                var tile = biome.GetTemplate(chunkPos).TileDatabase[chunkData[i]];
-                if (tile is not GameObjectTile gameObjectTile)
+                ChunkData.TilePrefabSpawn spawn = tilePrefabSpawns[i];
+                if (spawn.prefab == null) continue;
+
+                Vector2 worldPos = (chunkPos * chunkSize) + spawn.localPosition;
+
+                _spawnQueue.Enqueue(new SpawnRequest
+                {
+                    ChunkPos = chunkPos,
+                    Generation = gen,
+                    Prefab = spawn.prefab,
+                    Position = worldPos,
+                });
+            }
+
+            // Stored world objects: reference prefabs by integer id and need the database to
+            // resolve the actual GameObject.
+            for (int i = 0; i < storedWorldObjects.Count; i++)
+            {
+                ChunkData.WorldObjectSpawn obj = storedWorldObjects[i];
+                if (!prefabDatabase.TryGetObject(obj.prefabId, out var prefab))
                     continue;
 
-                int localX = i % chunkSize;
-                int localY = i / chunkSize;
-                Vector2Int cellWorldPos =
-                    TileUtils.GetWorldPosition(chunkPos, new Vector2Int(localX, localY), chunkSize);
-                Vector2 cellCenterPos = TileUtils.GetTileCenterPosition(cellWorldPos);
+                Vector2 worldPos = (chunkPos * chunkSize) + obj.localPosition;
 
-                GameObject prefab = gameObjectTile.GetGameObject(cellWorldPos);
                 _spawnQueue.Enqueue(new SpawnRequest
                 {
                     ChunkPos = chunkPos,
                     Generation = gen,
                     Prefab = prefab,
-                    Position = cellCenterPos
+                    Position = worldPos,
                 });
             }
         }
@@ -132,4 +152,5 @@ namespace MagusStudios.WaveFunctionCollapse
             return pool;
         }
     }
+
 }
