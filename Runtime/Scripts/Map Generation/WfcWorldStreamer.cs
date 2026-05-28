@@ -20,13 +20,31 @@ namespace MagusStudios.WaveFunctionCollapse
 {
     public class WfcWorldStreamer : MonoBehaviour, IWorldStreamer
     {
+        // ~ Inspector fields ~
+
+        public Transform Target; // Target transform we generate the world around (typically the player).
+        public Tilemap TargetTilemap; // Tilemap we generate the world onto.
+        public uint Seed;
+
+        [SerializeField] int drawDistance = 1;
+        [SerializeField] bool clearOnStart = true;
+        [SerializeField] Biome biome;
+
+        [SerializeField, Tooltip(
+             "Directory where chunk region files are saved and loaded. " +
+             "Absolute paths are used as-is; relative paths are resolved under " +
+             "Application.persistentDataPath. Leave empty for the default ('tile_chunks' " +
+             "under persistentDataPath). Can also be assigned from code before this " +
+             "component's Awake runs.")]
+        private string chunkDirectory = "tile_chunks";
+
         // ~ Constants ~
 
-        // Size of loaded/saved chunks. Must be even. Suggestions: 16, 32, 48, 64.
+        // Size of loaded/saved chunks. Must be even. Suggestions: 16, 24, 32
         public const int CHUNK_SIZE = 24;
 
         // Size of generated blocks, which are later converted to chunks. Must be even and satisfy
-        // CHUNK_SIZE / 2 < BLOCK_SIZE < CHUNK_SIZE. Suggestions: 12, 24, 36, 48.
+        // CHUNK_SIZE / 2 < BLOCK_SIZE < CHUNK_SIZE. Suggestions: 12, 18, 24
         private const int BLOCK_SIZE = 18;
 
         // Region files bundle a REGION_SIZE x REGION_SIZE grid of chunks into one file on disk —
@@ -57,14 +75,14 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private static readonly Vector2Int[] NeighborOffsets =
         {
-            new(-1,  1), // UpLeft
-            new( 0,  1), // Up
-            new( 1,  1), // UpRight
-            new(-1,  0), // Left
-            new( 1,  0), // Right
+            new(-1, 1), // UpLeft
+            new(0, 1), // Up
+            new(1, 1), // UpRight
+            new(-1, 0), // Left
+            new(1, 0), // Right
             new(-1, -1), // DownLeft
-            new( 0, -1), // Down
-            new( 1, -1), // DownRight
+            new(0, -1), // Down
+            new(1, -1), // DownRight
         };
 
         private static int ComputeSubBlockSize(int chunkSize)
@@ -74,6 +92,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 if (chunkSize % s == 0) return s;
             }
+
             return 1;
         }
 
@@ -96,32 +115,11 @@ namespace MagusStudios.WaveFunctionCollapse
             public Task<bool> Task;
         }
 
-
-        // ~ Inspector fields ~
-
-        public Transform Target;       // Target transform we generate the world around (typically the player).
-        public Tilemap TargetTilemap;  // Tilemap we generate the world onto.
-        public uint Seed;
-
-        [SerializeField] int generateDistance = 1;
-        [SerializeField] int drawDistance = 1;
-        [SerializeField] bool clearOnStart = true;
-        [SerializeField] Biome biome;
-        [SerializeField] WorldObjectDatabase worldObjectDatabase;
-
-        [SerializeField, Tooltip(
-            "Directory where chunk region files are saved and loaded. " +
-            "Absolute paths are used as-is; relative paths are resolved under " +
-            "Application.persistentDataPath. Leave empty for the default ('tile_chunks' " +
-            "under persistentDataPath). Can also be assigned from code before this " +
-            "component's Awake runs.")]
-        private string chunkDirectory = "tile_chunks";
-
         // ~ Events and Delegates ~
 
         public event IWorldStreamer.ChunkDrawnHandler OnChunkDrawn;
         public event IWorldStreamer.ChunkUndrawnHandler OnChunkUndrawn;
-        
+
         // ~ Public properties ~
 
         /// <summary>
@@ -142,6 +140,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         "set it before Awake or via the inspector.");
                     return;
                 }
+
                 chunkDirectory = value;
             }
         }
@@ -226,11 +225,6 @@ namespace MagusStudios.WaveFunctionCollapse
         private readonly TileBase[] _subTileDrawBuffer = new TileBase[SUB_BLOCK_SIZE * SUB_BLOCK_SIZE];
         private readonly TileBase[] _subNullTileBuffer = new TileBase[SUB_BLOCK_SIZE * SUB_BLOCK_SIZE];
 
-        // Reused per-chunk so OnChunkDrawn doesn't allocate a fresh list every draw. Handlers
-        // iterate it synchronously (queueing spawn requests by value), so the next draw is free
-        // to clear and refill it.
-        private readonly List<ChunkData.ChunkSpawn> _chunkSpawnBuffer = new();
-
         // Reused across chunks during the post-generation pass — the biome fills it, we drain it
         // into the chunk's WorldObjects list, then clear and reuse for the next chunk.
         private readonly List<ChunkData.WorldObjectSpawn> _postGenerationSpawnBuffer = new();
@@ -257,15 +251,15 @@ namespace MagusStudios.WaveFunctionCollapse
 
             // Pre-compute the in-chunk origin of each layer's block.
             int blockGap = CHUNK_SIZE - BLOCK_SIZE;
-            _blockOffsets[0] = new Vector2Int(blockGap / 2,               -CHUNK_SIZE / 2 + blockGap / 2);
+            _blockOffsets[0] = new Vector2Int(blockGap / 2, -CHUNK_SIZE / 2 + blockGap / 2);
             _blockOffsets[1] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, -CHUNK_SIZE / 2 + blockGap / 2);
             _blockOffsets[2] = new Vector2Int(CHUNK_SIZE - BLOCK_SIZE / 2, blockGap / 2);
-            _blockOffsets[3] = new Vector2Int(blockGap / 2,                blockGap / 2);
+            _blockOffsets[3] = new Vector2Int(blockGap / 2, blockGap / 2);
 
             // Pre-size _jobHandles and _validationEntries to the maximum number of blocks we will
             // schedule per layer (one job per chunk in generateDistance). Avoids List growth
             // reallocations.
-            int chunksInGenerateDistance = (2 * generateDistance + 1) * (2 * generateDistance + 1);
+            int chunksInGenerateDistance = (2 * drawDistance + 1) * (2 * drawDistance + 1);
             _jobHandles.Capacity = chunksInGenerateDistance;
             _validationEntries.Capacity = chunksInGenerateDistance;
 
@@ -313,20 +307,20 @@ namespace MagusStudios.WaveFunctionCollapse
         // of each border tile depends only on (layer, t) and is identical for every chunk.
         private void PrecomputeBorderOffsets()
         {
-            _borderOffsetsTop    = new BorderOffset[4, BLOCK_SIZE];
+            _borderOffsetsTop = new BorderOffset[4, BLOCK_SIZE];
             _borderOffsetsBottom = new BorderOffset[4, BLOCK_SIZE];
-            _borderOffsetsLeft   = new BorderOffset[4, BLOCK_SIZE];
-            _borderOffsetsRight  = new BorderOffset[4, BLOCK_SIZE];
+            _borderOffsetsLeft = new BorderOffset[4, BLOCK_SIZE];
+            _borderOffsetsRight = new BorderOffset[4, BLOCK_SIZE];
 
             for (int layer = 0; layer < 4; layer++)
             {
                 Vector2Int blockStartPos = _blockOffsets[layer];
                 for (int t = 0; t < BLOCK_SIZE; t++)
                 {
-                    _borderOffsetsTop[layer, t]    = MakeOffset(blockStartPos + new Vector2Int(t, BLOCK_SIZE));
+                    _borderOffsetsTop[layer, t] = MakeOffset(blockStartPos + new Vector2Int(t, BLOCK_SIZE));
                     _borderOffsetsBottom[layer, t] = MakeOffset(blockStartPos + new Vector2Int(t, -1));
-                    _borderOffsetsLeft[layer, t]   = MakeOffset(blockStartPos + new Vector2Int(-1, t));
-                    _borderOffsetsRight[layer, t]  = MakeOffset(blockStartPos + new Vector2Int(BLOCK_SIZE, t));
+                    _borderOffsetsLeft[layer, t] = MakeOffset(blockStartPos + new Vector2Int(-1, t));
+                    _borderOffsetsRight[layer, t] = MakeOffset(blockStartPos + new Vector2Int(BLOCK_SIZE, t));
                 }
             }
         }
@@ -377,6 +371,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 _loadTasks.Add(LoadOrPregenerateChunkAsync(coord, _chunksPregenerated));
             }
+
             Task loadTask = Task.WhenAll(_loadTasks);
 
             while (!loadTask.IsCompleted)
@@ -390,7 +385,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 hashSet?.Clear();
 
             _chunksInGenerateDistance.Clear();
-            GetChunksInDistance(playerChunkPosition, generateDistance, _chunksInGenerateDistance);
+            GetChunksInDistance(playerChunkPosition, drawDistance, _chunksInGenerateDistance);
 
             foreach (Vector2Int chunk in _chunksInGenerateDistance)
             {
@@ -431,11 +426,11 @@ namespace MagusStudios.WaveFunctionCollapse
             // layers 0-3 still have pending work via cascading dependencies. For those chunks that are finished,
             // we will run the post-generation step, which spawns other gameobjects that are not attached to tiles.
             RunPostGeneration(_blocksToGenerate[3]);
-            
+
             // - Unload chunks -
 
             _chunksToUnload.Clear();
-            GetChunksOutsideDistance(playerChunkPosition, generateDistance + 2, _loadedChunks.Keys,
+            GetChunksOutsideDistance(playerChunkPosition, drawDistance + 2, _loadedChunks.Keys,
                 _chunksToUnload);
 
             foreach (Vector2Int chunkPos in _chunksToUnload)
@@ -483,6 +478,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 _saveTasks.Add(SaveChunkAsync(chunkPos, _loadedChunks[chunkPos]));
             }
+
             // Only re-save the layer-progression file when something actually changed. This
             // dictionary grows unboundedly with exploration, so the serialize+write cost grows
             // over the session; skipping no-op saves keeps the cost off most cycles entirely.
@@ -813,7 +809,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 Random rng = new Random(TileUtils.HashWorldChunk(Seed, chunkPos));
                 BiomePostGenContext context = new BiomePostGenContext(
                     chunkPos, CHUNK_SIZE, chunkData.Tiles,
-                    tileDatabase, worldObjectDatabase, _postGenerationSpawnBuffer, rng);
+                    tileDatabase, biome.WorldObjectDatabase, _postGenerationSpawnBuffer, rng);
 
                 try
                 {
@@ -876,6 +872,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 data = new WfcBiomeData(template);
                 _biomeDataCache[template] = data;
             }
+
             return data;
         }
 
@@ -1011,6 +1008,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         Debug.Log($"Output in chunk {chunkPos} invalid at output index {i - 1}");
                         return false;
                     }
+
                     leftNeighborTileKey = moduleIndexToKey[leftTileNeighborIndex];
                 }
 
@@ -1034,6 +1032,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         Debug.Log($"Output in chunk {chunkPos} invalid at output index {i + 1}");
                         return false;
                     }
+
                     rightNeighborTileKey = moduleIndexToKey[rightTileNeighborIndex];
                 }
 
@@ -1057,6 +1056,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         Debug.Log($"Output in chunk {chunkPos} invalid at output index {i + BLOCK_SIZE}");
                         return false;
                     }
+
                     upNeighborTileKey = moduleIndexToKey[output[i + BLOCK_SIZE]];
                 }
 
@@ -1080,6 +1080,7 @@ namespace MagusStudios.WaveFunctionCollapse
                         Debug.Log($"Output in chunk {chunkPos} invalid at output index {i - BLOCK_SIZE}");
                         return false;
                     }
+
                     downNeighborTileKey = moduleIndexToKey[output[i - BLOCK_SIZE]];
                 }
 
@@ -1103,9 +1104,9 @@ namespace MagusStudios.WaveFunctionCollapse
             foreach (var kvp in modules)
             {
                 var perDirection = new HashSet<int>[4];
-                perDirection[(int)Direction.Up]    = new HashSet<int>(kvp.Value.Neighbors[Direction.Up]);
-                perDirection[(int)Direction.Down]  = new HashSet<int>(kvp.Value.Neighbors[Direction.Down]);
-                perDirection[(int)Direction.Left]  = new HashSet<int>(kvp.Value.Neighbors[Direction.Left]);
+                perDirection[(int)Direction.Up] = new HashSet<int>(kvp.Value.Neighbors[Direction.Up]);
+                perDirection[(int)Direction.Down] = new HashSet<int>(kvp.Value.Neighbors[Direction.Down]);
+                perDirection[(int)Direction.Left] = new HashSet<int>(kvp.Value.Neighbors[Direction.Left]);
                 perDirection[(int)Direction.Right] = new HashSet<int>(kvp.Value.Neighbors[Direction.Right]);
                 lookup[kvp.Key] = perDirection;
             }
@@ -1159,65 +1160,22 @@ namespace MagusStudios.WaveFunctionCollapse
 
                 _drawnChunks.Add(chunkPos);
 
-                if (OnChunkDrawn != null)
-                {
-                    BuildChunkSpawnList(
-                        chunkPos, tiles, tileDatabase, chunkData.WorldObjects, _chunkSpawnBuffer);
-                    OnChunkDrawn.Invoke(chunkPos, _chunkSpawnBuffer, biome);
-                }
+                OnChunkDrawn?.Invoke(chunkPos, biome.WorldObjectDatabase);
             }
         }
 
-        // Build the unified spawn list for a freshly-drawn chunk: every GameObjectTile cell in
-        // the tile array (prefab comes straight from the tile) plus every stored WorldObject
-        // (prefabId resolved against worldObjectDatabase). Subscribers receive a single
-        // ready-to-instantiate list.
-        private void BuildChunkSpawnList(
-            Vector2Int chunkPos, int[] tiles, TileDatabase tileDatabase,
-            List<ChunkData.WorldObjectSpawn> storedWorldObjects,
-            List<ChunkData.ChunkSpawn> output)
+        public bool TryGetChunk(Vector2Int chunkPos, out ChunkSnapshot snapshot)
         {
-            output.Clear();
-
-            int chunkOriginX = chunkPos.x * CHUNK_SIZE;
-            int chunkOriginY = chunkPos.y * CHUNK_SIZE;
-
-            for (int y = 0; y < CHUNK_SIZE; y++)
+            if (!_loadedChunks.TryGetValue(chunkPos, out ChunkData data))
             {
-                int rowStart = y * CHUNK_SIZE;
-                for (int x = 0; x < CHUNK_SIZE; x++)
-                {
-                    int tileKey = tiles[rowStart + x];
-                    if (tileKey < 0) continue;
-                    if (!tileDatabase.TryGetTile(tileKey, out Tile tile)) continue;
-                    if (tile is not GameObjectTile gameObjectTile) continue;
-
-                    Vector2Int worldTilePos = new Vector2Int(chunkOriginX + x, chunkOriginY + y);
-                    GameObject prefab = gameObjectTile.GetGameObject(worldTilePos);
-                    if (prefab == null) continue;
-
-                    output.Add(new ChunkData.ChunkSpawn
-                    {
-                        // Local cell-center so a tile at (x, y) spawns at the middle of its cell
-                        // once the subscriber adds chunkPos * CHUNK_SIZE.
-                        localPosition = new Vector2(x + 0.5f, y + 0.5f),
-                        prefab = prefab,
-                    });
-                }
+                snapshot = default;
+                return false;
             }
 
-            for (int i = 0; i < storedWorldObjects.Count; i++)
-            {
-                ChunkData.WorldObjectSpawn stored = storedWorldObjects[i];
-                if (!worldObjectDatabase.TryGetObject(stored.prefabId, out GameObject prefab))
-                    continue;
-
-                output.Add(new ChunkData.ChunkSpawn
-                {
-                    localPosition = stored.localPosition,
-                    prefab = prefab,
-                });
-            }
+            snapshot = new ChunkSnapshot(
+                chunkPos, CHUNK_SIZE, biome.GetTemplate(chunkPos),
+                data.Tiles, data.WorldObjects);
+            return true;
         }
 
         // ~ Distance and coordinate helpers ~
@@ -1235,7 +1193,7 @@ namespace MagusStudios.WaveFunctionCollapse
         {
             unloadedChunksInLoadDistance.Clear();
 
-            int chunkCeil = generateDistance + 1;
+            int chunkCeil = drawDistance + 1;
             for (int y = -chunkCeil; y <= chunkCeil; y++)
             {
                 for (int x = -chunkCeil; x <= chunkCeil; x++)
@@ -1354,7 +1312,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 ChunkData.WorldObjectSpawn obj = chunkData.WorldObjects[i];
                 int offset = TILES_BYTES + OBJECTS_HEADER_BYTES + i * OBJECT_BYTES;
                 BinaryPrimitives.WriteInt32LittleEndian(
-                    payload.AsSpan(offset),     BitConverter.SingleToInt32Bits(obj.localPosition.x));
+                    payload.AsSpan(offset), BitConverter.SingleToInt32Bits(obj.localPosition.x));
                 BinaryPrimitives.WriteInt32LittleEndian(
                     payload.AsSpan(offset + 4), BitConverter.SingleToInt32Bits(obj.localPosition.y));
                 BinaryPrimitives.WriteInt32LittleEndian(
@@ -1531,7 +1489,8 @@ namespace MagusStudios.WaveFunctionCollapse
                 string[] oldFiles = Directory.GetFiles(directory, "chunk_*.bin");
                 if (oldFiles.Length == 0) return;
 
-                Debug.Log($"[{nameof(WfcWorldStreamer)}] Migrating {oldFiles.Length} legacy chunk file(s) into region files");
+                Debug.Log(
+                    $"[{nameof(WfcWorldStreamer)}] Migrating {oldFiles.Length} legacy chunk file(s) into region files");
 
                 // Legacy file was tiles-only; the new slot format adds an object payload after
                 // the tiles. The buffer covers a full new slot — tiles go in the first
@@ -1555,9 +1514,11 @@ namespace MagusStudios.WaveFunctionCollapse
                         {
                             if (src.Length != TILES_BYTES)
                             {
-                                Debug.LogWarning($"[{nameof(WfcWorldStreamer)}] Legacy chunk {oldPath} has size {src.Length}, expected {TILES_BYTES}; skipping");
+                                Debug.LogWarning(
+                                    $"[{nameof(WfcWorldStreamer)}] Legacy chunk {oldPath} has size {src.Length}, expected {TILES_BYTES}; skipping");
                                 continue;
                             }
+
                             int read = 0;
                             while (read < TILES_BYTES)
                             {

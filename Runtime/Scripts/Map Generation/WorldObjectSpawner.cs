@@ -66,30 +66,62 @@ namespace MagusStudios.WaveFunctionCollapse
             }
         }
 
-        private void HandleChunkDrawn(
-            Vector2Int chunkPos,
-            IReadOnlyList<ChunkData.ChunkSpawn> spawns,
-            Biome biome)
+        private void HandleChunkDrawn(Vector2Int chunkPos, WorldObjectDatabase worldObjectDatabase)
         {
-            int chunkSize = WfcWorldStreamer.CHUNK_SIZE;
+            if (!_worldStreamer.TryGetChunk(chunkPos, out ChunkSnapshot snapshot))
+                return;
+
             _chunkSpawns[chunkPos] = new List<(WorldSpawn, GameObject)>();
 
             _chunkGeneration.TryGetValue(chunkPos, out int gen);
             gen++;
             _chunkGeneration[chunkPos] = gen;
 
-            for (int i = 0; i < spawns.Count; i++)
+            int chunkSize = snapshot.ChunkSize;
+            TileDatabase tileDatabase = snapshot.Template.TileDatabase;
+            int chunkOriginX = chunkPos.x * chunkSize;
+            int chunkOriginY = chunkPos.y * chunkSize;
+
+            // GameObjectTile cells: prefab is supplied by the tile itself.
+            for (int y = 0; y < chunkSize; y++)
             {
-                ChunkData.ChunkSpawn spawn = spawns[i];
-                if (spawn.prefab == null) continue;
+                for (int x = 0; x < chunkSize; x++)
+                {
+                    int tileKey = snapshot.GetTileKey(x, y);
+                    if (tileKey < 0) continue;
+                    if (!tileDatabase.TryGetTile(tileKey, out UnityEngine.Tilemaps.Tile tile)) continue;
+                    if (tile is not GameObjectTile gameObjectTile) continue;
 
-                Vector2 worldPos = (chunkPos * chunkSize) + spawn.localPosition;
+                    Vector2Int worldTilePos = new Vector2Int(chunkOriginX + x, chunkOriginY + y);
+                    GameObject prefab = gameObjectTile.GetGameObject(worldTilePos);
+                    if (prefab == null) continue;
 
+                    // Cell-center so a tile at (x, y) spawns in the middle of its cell.
+                    Vector2 worldPos = new Vector2(chunkOriginX + x + 0.5f, chunkOriginY + y + 0.5f);
+                    _spawnQueue.Enqueue(new SpawnRequest
+                    {
+                        ChunkPos = chunkPos,
+                        Generation = gen,
+                        Prefab = prefab,
+                        Position = worldPos,
+                    });
+                }
+            }
+
+            // Stored world-object spawns: resolve prefab id through our database.
+            IReadOnlyList<ChunkData.WorldObjectSpawn> stored = snapshot.WorldObjects;
+            for (int i = 0; i < stored.Count; i++)
+            {
+                ChunkData.WorldObjectSpawn entry = stored[i];
+                if (!worldObjectDatabase.TryGetObject(entry.prefabId, out GameObject prefab))
+                    continue;
+
+                Vector2 worldPos = new Vector2(chunkOriginX, chunkOriginY) + entry.localPosition;
                 _spawnQueue.Enqueue(new SpawnRequest
                 {
                     ChunkPos = chunkPos,
                     Generation = gen,
-                    Prefab = spawn.prefab,
+                    Prefab = prefab,
                     Position = worldPos,
                 });
             }

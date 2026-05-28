@@ -6,6 +6,13 @@ namespace MagusStudios.WaveFunctionCollapse
 {
     public abstract class Biome : ScriptableObject
     {
+        [SerializeField] private WorldObjectDatabase _worldObjectDatabase;
+
+        /// <summary>
+        /// Database used to resolve prefab ids emitted by this biome's PostGenerate spawns.
+        /// </summary>
+        public WorldObjectDatabase WorldObjectDatabase => _worldObjectDatabase;
+
         public abstract WfcTemplate GetTemplate(int chunkX, int chunkY);
 
         public WfcTemplate GetTemplate(Vector2Int pos) => GetTemplate(pos.x, pos.y);
