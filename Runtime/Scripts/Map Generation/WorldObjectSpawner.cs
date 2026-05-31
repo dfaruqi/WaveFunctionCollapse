@@ -8,8 +8,10 @@ namespace MagusStudios.WaveFunctionCollapse
     public class WorldObjectSpawner : MonoBehaviour
     {
         [SerializeField] private int _spawnsPerFrame = 64;
+        [SerializeField] private GameObject _spawnParentPrefab;
 
         private IWorldStreamer _worldStreamer;
+        private Transform _spawnParent;
 
         private Dictionary<GameObject, ObjectPool<WorldSpawn>> _spawnPools =
             new Dictionary<GameObject, ObjectPool<WorldSpawn>>();
@@ -32,6 +34,9 @@ namespace MagusStudios.WaveFunctionCollapse
         private void Awake()
         {
             _worldStreamer = GetComponent<IWorldStreamer>();
+            _spawnParent = _spawnParentPrefab != null
+                ? Instantiate(_spawnParentPrefab).transform
+                : new GameObject($"{name}_Spawns").transform;
         }
 
         private void OnEnable()
@@ -146,7 +151,7 @@ namespace MagusStudios.WaveFunctionCollapse
                 pool = new ObjectPool<WorldSpawn>(
                     createFunc: () =>
                     {
-                        var instance = Instantiate(prefab);
+                        var instance = Instantiate(prefab, _spawnParent);
                         return instance.GetComponent<WorldSpawn>() ?? instance.AddComponent<WorldSpawn>();
                     },
                     actionOnGet: worldSpawn => worldSpawn.gameObject.SetActive(true),
