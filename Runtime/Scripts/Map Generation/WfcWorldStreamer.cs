@@ -122,36 +122,10 @@ namespace MagusStudios.WaveFunctionCollapse
 
         // ~ Public properties ~
 
-        /// <summary>
-        /// Directory where chunk region files are read and written.
-        /// Before Awake: returns the configured value (assignable by a caller or inspector).
-        /// After Awake: returns the resolved absolute path; assignments are ignored with a warning,
-        /// since chunks would already be loaded from the previous location.
-        /// </summary>
-        public string ChunkDirectory
-        {
-            get => _chunkDirectory ?? chunkDirectory;
-            set
-            {
-                if (_chunkDirectory != null)
-                {
-                    Debug.LogWarning(
-                        $"[{nameof(WfcWorldStreamer)}] ChunkDirectory assignment after Awake is ignored; " +
-                        "set it before Awake or via the inspector.");
-                    return;
-                }
-
-                chunkDirectory = value;
-            }
-        }
-
         // ~ State: initialization ~
 
         private bool _initialized = false;
 
-        // Resolved absolute directory where chunks are saved. Populated in Awake from
-        // `chunkDirectory` — until then it is null, which the ChunkDirectory setter uses as the
-        // "not yet initialized" signal.
         private string _chunkDirectory;
 
         // Pre-computed origin (within a chunk) for each layer's block. Built in Awake.
@@ -1247,9 +1221,7 @@ namespace MagusStudios.WaveFunctionCollapse
         private static string ResolveChunkDirectory(string configured)
         {
             if (string.IsNullOrWhiteSpace(configured))
-                return Path.Combine(Application.persistentDataPath, "tile_chunks");
-            if (Path.IsPathRooted(configured))
-                return configured;
+                Path.Combine(Application.persistentDataPath, "tile_chunks");
             return Path.Combine(Application.persistentDataPath, configured);
         }
 
