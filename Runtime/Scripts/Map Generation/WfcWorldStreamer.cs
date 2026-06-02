@@ -149,7 +149,7 @@ namespace MagusStudios.WaveFunctionCollapse
 
         // Record of every block ever generated and the layer it has reached (0 = pregenerated,
         // 1-4 = layers 1-4). _allGeneratedBlocksDirty is set whenever this is mutated and cleared
-        // after a successful save. Lets us skip re-serializing the (potentially large, growing)
+        // after a successful save. We will skip re-serializing the (potentially large, growing)
         // file when nothing changed since the last save cycle.
         private Dictionary<Vector2Int, byte> _allGeneratedBlocks = new();
         private bool _allGeneratedBlocksDirty = false;
@@ -214,6 +214,28 @@ namespace MagusStudios.WaveFunctionCollapse
 
         private void Awake()
         {
+            _ = InitializeAsync();
+        }
+
+        private void OnEnable() => StartCoroutine(StreamWorld());
+
+        private void OnDisable() => StopAllCoroutines();
+
+        // Drain the block-state pool and dispose cached biome data (which owns native containers).
+        private void OnDestroy()
+        {
+            while (_blockStatePool.TryPop(out WfcBlockState s))
+                s.Dispose();
+
+            foreach (WfcBiomeData data in _biomeDataCache.Values)
+                data.Dispose();
+            _biomeDataCache.Clear();
+        }
+
+        // ~ Initialization ~
+
+        private async Task InitializeAsync()
+        {
             _chunkDirectory = ResolveChunkDirectory(chunkDirectory);
 
             // Create chunk directory if it does not exist.
@@ -249,30 +271,7 @@ namespace MagusStudios.WaveFunctionCollapse
             {
                 _blocksToGenerate[i] = new HashSet<Vector2Int>();
             }
-
-            _ = InitializeAsync();
-        }
-
-        private void OnEnable() => StartCoroutine(StreamWorld());
-
-        private void OnDisable() => StopAllCoroutines();
-
-        // Drain the block-state pool and dispose cached biome data (which owns native containers).
-        private void OnDestroy()
-        {
-            while (_blockStatePool.TryPop(out WfcBlockState s))
-                s.Dispose();
-
-            foreach (WfcBiomeData data in _biomeDataCache.Values)
-                data.Dispose();
-            _biomeDataCache.Clear();
-        }
-
-        // ~ Initialization ~
-
-        private async Task InitializeAsync()
-        {
-            await MigrateLegacyChunkFilesAsync();
+            
             _allGeneratedBlocks = await LoadChunkLayersAsync(GetAllGeneratedBlocksPath());
             _initialized = true;
         }
@@ -1447,79 +1446,6 @@ namespace MagusStudios.WaveFunctionCollapse
             }
 
             return chunkLayers;
-        }
-
-        // One-time migration: the previous on-disk format wrote one file per chunk. On first
-        // launch after the format change, pull every legacy `chunk_X_Y.bin` into its
-        // corresponding region file and delete the original. Idempotent — if there are no
-        // legacy files, this is a cheap directory listing and returns immediately.
-        private async Task MigrateLegacyChunkFilesAsync()
-        {
-            string directory = _chunkDirectory;
-            await Task.Run(() =>
-            {
-                string[] oldFiles = Directory.GetFiles(directory, "chunk_*.bin");
-                if (oldFiles.Length == 0) return;
-
-                Debug.Log(
-                    $"[{nameof(WfcWorldStreamer)}] Migrating {oldFiles.Length} legacy chunk file(s) into region files");
-
-                // Legacy file was tiles-only; the new slot format adds an object payload after
-                // the tiles. The buffer covers a full new slot — tiles go in the first
-                // TILES_BYTES, the object section stays zeroed (count = 0, no entries).
-                byte[] buffer = new byte[CHUNK_SLOT_BYTES];
-                int migrated = 0;
-                foreach (string oldPath in oldFiles)
-                {
-                    string name = Path.GetFileNameWithoutExtension(oldPath);
-                    string[] parts = name.Split('_');
-                    if (parts.Length != 3 || parts[0] != "chunk") continue;
-                    if (!int.TryParse(parts[1], out int x)) continue;
-                    if (!int.TryParse(parts[2], out int y)) continue;
-
-                    try
-                    {
-                        Array.Clear(buffer, 0, CHUNK_SLOT_BYTES);
-
-                        using (FileStream src = new FileStream(oldPath, FileMode.Open, FileAccess.Read,
-                                   FileShare.Read, bufferSize: 4096, useAsync: false))
-                        {
-                            if (src.Length != TILES_BYTES)
-                            {
-                                Debug.LogWarning(
-                                    $"[{nameof(WfcWorldStreamer)}] Legacy chunk {oldPath} has size {src.Length}, expected {TILES_BYTES}; skipping");
-                                continue;
-                            }
-
-                            int read = 0;
-                            while (read < TILES_BYTES)
-                            {
-                                int n = src.Read(buffer, read, TILES_BYTES - read);
-                                if (n == 0) break;
-                                read += n;
-                            }
-                        }
-
-                        (Vector2Int region, int slot) = GetRegionAndSlot(new Vector2Int(x, y));
-                        string regionPath = GetRegionPath(region);
-                        using (FileStream dst = new FileStream(regionPath, FileMode.OpenOrCreate,
-                                   FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: false))
-                        {
-                            dst.Seek((long)slot * CHUNK_SLOT_BYTES, SeekOrigin.Begin);
-                            dst.Write(buffer, 0, CHUNK_SLOT_BYTES);
-                        }
-
-                        File.Delete(oldPath);
-                        migrated++;
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogError($"[{nameof(WfcWorldStreamer)}] Failed to migrate {oldPath}: {e.Message}");
-                    }
-                }
-
-                Debug.Log($"[{nameof(WfcWorldStreamer)}] Migrated {migrated}/{oldFiles.Length} legacy chunk file(s)");
-            }).ConfigureAwait(false);
         }
     }
 }
